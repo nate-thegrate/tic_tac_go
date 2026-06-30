@@ -12,6 +12,7 @@ dependencies:
   get_hooked:
     path: ../get_hooked/packages/get_hooked
   marionette_flutter: ^0.6.0
+  meta: ^1.18.0
 
 dev_dependencies:
   flutter_test:
