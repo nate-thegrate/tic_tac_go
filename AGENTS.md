@@ -29,6 +29,27 @@ Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object {
 
 Connect to the app if it was found; if not, use `flutter run -d windows` to start it.
 
-# Accessing Dart files
+# Dart coding
+
+## Accessing files
 
 Every `.dart` file can be found in the `lib/` directory or one of its subdirectories.
+
+## Coding style
+
+Use [dot shorthands](https://dart.dev/language/dot-shorthands) when passing arguments to named parameters (but avoid shortening an unnamed constructor to `.new()`).
+
+Prefer [destructuring class instances](https://dart.dev/language/patterns#destructuring-class-instances) when using a single object to assign multiple local variables. Avoid using 1 or 2-letter variable names.
+
+```dart
+void foo(Rect rect) {
+  // BAD
+  final Offset a1 = rect.topLeft;
+  final Offset a2 = rect.bottomRight;
+  final Offset b1 = rect.topRight;
+  final Offset b2 = rect.bottomLeft;
+
+  // GOOD
+  final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
+}
+```
