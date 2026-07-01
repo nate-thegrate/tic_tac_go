@@ -60,16 +60,16 @@ When awaiting multiple independent futures, use a record of futures with [`.wait
 // BAD
 final programs = await Future.wait([
   ui.FragmentProgram.fromAsset('shaders/paper.frag'),
-  ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+  ui.FragmentProgram.fromAsset('shaders/marker.frag'),
 ]);
 paperShader = programs[0].fragmentShader();
-pencilShader = programs[1].fragmentShader();
+markerShader = programs[1].fragmentShader();
 
 // GOOD
-final (paper, pencil) = await (
+final (paper, marker) = await (
   ui.FragmentProgram.fromAsset('shaders/paper.frag'),
-  ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+  ui.FragmentProgram.fromAsset('shaders/marker.frag'),
 ).wait;
 paperShader = paper.fragmentShader();
-pencilShader = pencil.fragmentShader();
+markerShader = marker.fragmentShader();
 ```

@@ -12,6 +12,11 @@ enum PlayerMark {
   x,
   o;
 
+  Color get color => switch (this) {
+    x => const Color(0xFFFF3A12),
+    o => const Color(0xFF00DDDD),
+  };
+
   @override
   String toString() => name.toUpperCase();
 }
@@ -118,49 +123,63 @@ class Board extends RefWidget {
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();
 
-  /// Paper fill / pencil strokes (loaded in [loadShaders] before [runApp]).
+  /// Paper fill / marker strokes (loaded in [loadShaders] before [runApp]).
   static late final ui.FragmentShader paperShader;
-  static late final ui.FragmentShader pencilShader;
+  static late final ui.FragmentProgram markerProgram;
+  /// One [FragmentShader] per ink color so concurrent strokes keep their uniforms.
+  static final _markerShaders = <int, ui.FragmentShader>{};
   static Future<void> loadShaders() async {
-    final (paper, pencil) = await (
+    final (paper, marker) = await (
       ui.FragmentProgram.fromAsset('shaders/paper.frag'),
-      ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+      ui.FragmentProgram.fromAsset('shaders/marker.frag'),
     ).wait;
     paperShader = paper.fragmentShader();
-    pencilShader = pencil.fragmentShader();
+    markerProgram = marker;
+  }
+
+  /// Marker stroke [Paint] for [color] (grid black or [PlayerMark.color]).
+  static Paint markerPaint(Size size, Color color, double dpr) {
+    final Size(:width, :height) = size;
+    final shader = _markerShaders.putIfAbsent(
+      color.toARGB32(),
+      markerProgram.fragmentShader,
+    );
+    shader
+      ..setFloat(0, width)
+      ..setFloat(1, height)
+      ..setFloat(2, color.r)
+      ..setFloat(3, color.g)
+      ..setFloat(4, color.b)
+      ..setFloat(5, color.a)
+      ..setFloat(6, dpr)
+      ..setFloat(7, 1.0);
+    return Paint()
+      ..style = .stroke
+      ..strokeWidth = 6
+      ..strokeCap = .round
+      ..shader = shader;
   }
 
   static void paint(PaintRef ref) {
     final board = ref.watch(state);
-    final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+    final PaintRef(:canvas, :size) = ref;
+    final Size(:width, :height) = size;
     final cols = board.width;
     final rows = board.height;
     if (cols <= 0 || rows <= 0) return;
 
-    // Graphite stroke via shaders/pencil.frag (HiDPI grain, dry-media alpha).
-    const graphite = Color(0xFF404040);
-    pencilShader
-      ..setFloat(0, width)
-      ..setFloat(1, height)
-      ..setFloat(2, graphite.r)
-      ..setFloat(3, graphite.g)
-      ..setFloat(4, graphite.b)
-      ..setFloat(5, graphite.a)
-      ..setFloat(6, MediaQuery.devicePixelRatioOf(ref.context))
-      ..setFloat(7, 1.0);
-    final paint = Paint()
-      ..style = .stroke
-      ..strokeWidth = 3
-      ..strokeCap = .round
-      ..shader = pencilShader;
+    final dpr = MediaQuery.devicePixelRatioOf(ref.context);
+
+    // Black grid via shaders/marker.frag (saturated ink, mild fiber grain).
+    final gridPaint = markerPaint(size, Colors.black, dpr);
 
     for (var i = 1; i < cols; i++) {
       final x = width * i / cols;
-      canvas.drawLine(Offset(x, 0), Offset(x, height), paint);
+      canvas.drawLine(Offset(x, 0), Offset(x, height), gridPaint);
     }
     for (var i = 1; i < rows; i++) {
       final y = height * i / rows;
-      canvas.drawLine(Offset(0, y), Offset(width, y), paint);
+      canvas.drawLine(Offset(0, y), Offset(width, y), gridPaint);
     }
 
     final cellWidth = width / cols;
@@ -182,6 +201,9 @@ class Board extends RefWidget {
 
         final progress = currentMark == (row, col) ? t : 1.0;
         if (progress <= 0) continue;
+
+        // Player marks use [PlayerMark.color] (X orange-red, O cyan).
+        final paint = markerPaint(size, mark.color, dpr);
 
         switch (mark) {
           case .x:
