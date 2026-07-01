@@ -10,6 +10,6 @@ void main() async {
   } else {
     WidgetsFlutterBinding.ensureInitialized();
   }
-  await Board.loadShader();
+  await Board.loadShaders();
   runApp(const App());
 }

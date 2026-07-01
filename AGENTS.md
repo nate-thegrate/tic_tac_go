@@ -53,3 +53,23 @@ void foo(Rect rect) {
   final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
 }
 ```
+
+When awaiting multiple independent futures, use a record of futures with [`.wait`](https://api.dart.dev/dart-async/FutureRecord2/wait.html) and destructure the results.
+
+```dart
+// BAD
+final programs = await Future.wait([
+  ui.FragmentProgram.fromAsset('shaders/paper.frag'),
+  ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+]);
+paperShader = programs[0].fragmentShader();
+pencilShader = programs[1].fragmentShader();
+
+// GOOD
+final (paper, pencil) = await (
+  ui.FragmentProgram.fromAsset('shaders/paper.frag'),
+  ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+).wait;
+paperShader = paper.fragmentShader();
+pencilShader = pencil.fragmentShader();
+```

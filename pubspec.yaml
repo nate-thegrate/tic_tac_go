@@ -28,3 +28,4 @@ flutter:
 
   shaders:
     - shaders/paper.frag
+    - shaders/pencil.frag

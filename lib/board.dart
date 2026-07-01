@@ -100,7 +100,10 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
 class Board extends RefWidget {
   const Board({super.key});
 
-  static final state = BoardState();
+  static final state = BoardState()
+    ..update(1, 1, .x)
+    ..update(0, 0, .o);
+
   static final turn = Get.it(PlayerMark.x);
   static void mark(int down, int across) async {
     currentMark = (down, across);
@@ -115,11 +118,98 @@ class Board extends RefWidget {
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();
 
-  /// Paper grain is drawn with shaders/paper.frag once it finishes loading.
+  /// Paper fill / pencil strokes (loaded in [loadShaders] before [runApp]).
   static late final ui.FragmentShader paperShader;
-  static Future<void> loadShader() async {
-    final program = await ui.FragmentProgram.fromAsset('shaders/paper.frag');
-    Board.paperShader = program.fragmentShader();
+  static late final ui.FragmentShader pencilShader;
+  static Future<void> loadShaders() async {
+    final (paper, pencil) = await (
+      ui.FragmentProgram.fromAsset('shaders/paper.frag'),
+      ui.FragmentProgram.fromAsset('shaders/pencil.frag'),
+    ).wait;
+    paperShader = paper.fragmentShader();
+    pencilShader = pencil.fragmentShader();
+  }
+
+  static void paint(PaintRef ref) {
+    final board = ref.watch(state);
+    final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+    final cols = board.width;
+    final rows = board.height;
+    if (cols <= 0 || rows <= 0) return;
+
+    // Graphite stroke via shaders/pencil.frag (HiDPI grain, dry-media alpha).
+    const graphite = Color(0xFF404040);
+    pencilShader
+      ..setFloat(0, width)
+      ..setFloat(1, height)
+      ..setFloat(2, graphite.r)
+      ..setFloat(3, graphite.g)
+      ..setFloat(4, graphite.b)
+      ..setFloat(5, graphite.a)
+      ..setFloat(6, MediaQuery.devicePixelRatioOf(ref.context))
+      ..setFloat(7, 1.0);
+    final paint = Paint()
+      ..style = .stroke
+      ..strokeWidth = 3
+      ..strokeCap = .round
+      ..shader = pencilShader;
+
+    for (var i = 1; i < cols; i++) {
+      final x = width * i / cols;
+      canvas.drawLine(Offset(x, 0), Offset(x, height), paint);
+    }
+    for (var i = 1; i < rows; i++) {
+      final y = height * i / rows;
+      canvas.drawLine(Offset(0, y), Offset(width, y), paint);
+    }
+
+    final cellWidth = width / cols;
+    final cellHeight = height / rows;
+    final inset = math.min(cellWidth, cellHeight) * 0.15;
+    final t = ref.watch(playerMarkAnimation);
+
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < cols; col++) {
+        final mark = board[row][col];
+        if (mark == null) continue;
+
+        final rect = Rect.fromLTWH(
+          col * cellWidth,
+          row * cellHeight,
+          cellWidth,
+          cellHeight,
+        ).deflate(inset);
+
+        final progress = currentMark == (row, col) ? t : 1.0;
+        if (progress <= 0) continue;
+
+        switch (mark) {
+          case .x:
+            final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
+
+            if (progress < 0.5) {
+              final t = progress * 2;
+              canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, t)!, paint);
+            } else {
+              canvas.drawLine(topLeft, bottomRight, paint);
+              final t = (progress - 0.5) * 2;
+              canvas.drawLine(
+                topRight,
+                Offset.lerp(topRight, bottomLeft, t.clamp(0.0, 1.0))!,
+                paint,
+              );
+            }
+          case .o:
+            canvas.drawArc(
+              rect,
+              -math.pi / 2,
+              progress.clamp(0.0, 1.0) * math.pi * 2,
+              false,
+              paint,
+            );
+        }
+      }
+    }
   }
 
   @override
@@ -143,57 +233,7 @@ class Board extends RefWidget {
 
             mark(down, across);
           },
-          child: RefPaint((ref) {
-            final board = ref.watch(state);
-            final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-            final cols = board.width;
-            final rows = board.height;
-            if (cols <= 0 || rows <= 0) return;
-
-            final paint = Paint()
-              ..color = Color(0xFF404040)
-              ..style = .stroke
-              ..strokeWidth = 3
-              ..strokeCap = .round;
-
-            for (var i = 1; i < cols; i++) {
-              final x = width * i / cols;
-              canvas.drawLine(Offset(x, 0), Offset(x, height), paint);
-            }
-            for (var i = 1; i < rows; i++) {
-              final y = height * i / rows;
-              canvas.drawLine(Offset(0, y), Offset(width, y), paint);
-            }
-
-            final cellWidth = width / cols;
-            final cellHeight = height / rows;
-            final inset = math.min(cellWidth, cellHeight) * 0.15;
-            final t = ref.watch(playerMarkAnimation);
-
-            for (var row = 0; row < rows; row++) {
-              for (var col = 0; col < cols; col++) {
-                final mark = board[row][col];
-                if (mark == null) continue;
-
-                final rect = Rect.fromLTWH(
-                  col * cellWidth,
-                  row * cellHeight,
-                  cellWidth,
-                  cellHeight,
-                ).deflate(inset);
-
-                final progress = currentMark == (row, col) ? t : 1.0;
-                if (progress <= 0) continue;
-
-                switch (mark) {
-                  case .x:
-                    _drawX(canvas, rect, paint, progress);
-                  case .o:
-                    _drawO(canvas, rect, paint, progress);
-                }
-              }
-            }
-          }),
+          child: const RefPaint(paint),
         );
       },
     );
@@ -258,27 +298,6 @@ class Board extends RefWidget {
       ),
     );
   }
-}
-
-/// Draws an X into [rect], revealing the strokes as [progress] goes 0→1
-/// (first diagonal, then the second).
-void _drawX(Canvas canvas, Rect rect, Paint paint, double progress) {
-  final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
-
-  if (progress < 0.5) {
-    final t = progress * 2;
-    canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, t)!, paint);
-    return;
-  }
-
-  canvas.drawLine(topLeft, bottomRight, paint);
-  final t = (progress - 0.5) * 2;
-  canvas.drawLine(topRight, Offset.lerp(topRight, bottomLeft, t.clamp(0.0, 1.0))!, paint);
-}
-
-/// Draws an O into [rect], sweeping the stroke as [progress] goes 0→1.
-void _drawO(Canvas canvas, Rect rect, Paint paint, double progress) {
-  canvas.drawArc(rect, -math.pi / 2, progress.clamp(0.0, 1.0) * math.pi * 2, false, paint);
 }
 
 class PaperPadding extends RefLayout {
