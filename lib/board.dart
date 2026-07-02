@@ -13,24 +13,25 @@ enum PlayerMark {
   o;
 
   Color get color => switch (this) {
-    x => const Color(0xFFFF3A12),
-    o => const Color(0xFF00DDDD),
+    x => const Color(0xFFFF6010),
+    o => const Color(0xFF0098A0),
   };
 
   @override
   String toString() => name.toUpperCase();
 }
 
+/// A read-only view of the data in [BoardState].
 extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<PlayerMark?>> {
   BoardData(List<List<PlayerMark?>> list)
     : _list = UnmodifiableListView(list.map(UnmodifiableListView.new));
 
-  int get width => _list.first.length;
-  int get height => _list.length;
+  int get cols => _list.first.length;
+  int get rows => _list.length;
 
   @protected
   @redeclare
-  void get length {}
+  void get length => ();
 }
 
 class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
@@ -45,27 +46,24 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
     notifyListeners();
   }
 
-  int get width => _list.first.length;
-  set width(int value) {
-    if (value == width) return;
+  int get cols => _list.first.length;
+  set cols(int value) {
+    if (value == cols) return;
+    final newState = [for (final row in _list) List.generate(value, row.elementAtOrNull)];
+    _list = newState;
+    notifyListeners();
+  }
+
+  int get rows => _list.length;
+  set rows(int value) {
+    if (value == rows) return;
     final newState = [
-      for (final row in _list) [for (int i = 0; i < value; i++) row.elementAtOrNull(i)],
+      for (int i = 0; i < value; i++) _list.elementAtOrNull(i) ?? List.filled(cols, null),
     ];
     _list = newState;
     notifyListeners();
   }
 
-  int get height => _list.length;
-  set height(int value) {
-    if (value == height) return;
-    final newState = [
-      for (int i = 0; i < value; i++) _list.elementAtOrNull(i) ?? List.filled(width, null),
-    ];
-    _list = newState;
-    notifyListeners();
-  }
-
-  /// Updates the cell at `[down][across]` using **0-based** row/column indices.
   void update(int down, int across, PlayerMark? mark) {
     final oldValue = _list[down][across];
     if (mark == oldValue) return;
@@ -102,32 +100,22 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
   ].join('\n');
 }
 
-class Board extends RefWidget {
+class Board extends StatelessWidget {
   const Board({super.key});
 
   static final state = BoardState()
-    ..update(1, 1, .x)
-    ..update(0, 0, .o);
+    ..update(0, 0, .o)
+    ..update(1, 1, .x);
 
   static final turn = Get.it(PlayerMark.x);
-  static void mark(int down, int across) async {
-    currentMark = (down, across);
-    state.update(down, across, turn.value);
-    await playerMarkAnimation.forward(from: 0);
-    turn.value = switch (turn.value) {
-      .x => .o,
-      .o => .x,
-    };
-  }
 
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();
 
-  /// Paper fill / marker strokes (loaded in [loadShaders] before [runApp]).
   static late final ui.FragmentShader paperShader;
   static late final ui.FragmentProgram markerProgram;
-  /// One [FragmentShader] per ink color so concurrent strokes keep their uniforms.
-  static final _markerShaders = <int, ui.FragmentShader>{};
+  static final _markerShaders = <(Color, double grain), ui.FragmentShader>{};
+
   static Future<void> loadShaders() async {
     final (paper, marker) = await (
       ui.FragmentProgram.fromAsset('shaders/paper.frag'),
@@ -137,54 +125,97 @@ class Board extends RefWidget {
     markerProgram = marker;
   }
 
-  /// Marker stroke [Paint] for [color] (grid black or [PlayerMark.color]).
-  static Paint markerPaint(Size size, Color color, double dpr) {
-    final Size(:width, :height) = size;
-    final shader = _markerShaders.putIfAbsent(
-      color.toARGB32(),
-      markerProgram.fragmentShader,
-    );
-    shader
-      ..setFloat(0, width)
-      ..setFloat(1, height)
-      ..setFloat(2, color.r)
-      ..setFloat(3, color.g)
-      ..setFloat(4, color.b)
-      ..setFloat(5, color.a)
-      ..setFloat(6, dpr)
-      ..setFloat(7, 1.0);
-    return Paint()
-      ..style = .stroke
-      ..strokeWidth = 6
-      ..strokeCap = .round
-      ..shader = shader;
+  static final _devicePixelRatio =
+      WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
+
+  static final int _gameSeed = math.Random().nextInt(0x1000);
+  static double _rng(int seed) {
+    var x = (seed + _gameSeed) * 1103515245 + 12345;
+    x = (x ^ (x >> 16)) & 0x7fffffff;
+    return x / 0x7fffffff;
+  }
+
+  static void drawMarker(
+    void Function(Paint paint) draw, {
+    required Size size,
+    PlayerMark? player,
+    required double strokeWidth,
+  }) {
+    final color = player?.color ?? Colors.black;
+
+    Paint paint({required double grain, double opacity = 1}) {
+      final Size(:width, :height) = size;
+      final ink = opacity >= 1 ? color : color.withValues(alpha: color.a * opacity);
+      final shader = _markerShaders[(ink, grain)] ??= markerProgram.fragmentShader()
+        ..setFloat(0, width)
+        ..setFloat(1, height)
+        ..setFloat(2, ink.r)
+        ..setFloat(3, ink.g)
+        ..setFloat(4, ink.b)
+        ..setFloat(5, ink.a)
+        ..setFloat(6, _devicePixelRatio)
+        ..setFloat(7, grain);
+      return Paint()
+        ..style = .stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = .round
+        ..strokeJoin = .round
+        ..blendMode = .multiply
+        ..shader = shader;
+    }
+
+    final double opacity = switch (player) {
+      .x => 1,
+      .o => 0.2,
+      null => 0.4,
+    };
+    draw(paint(grain: 2));
+    draw(paint(grain: 0, opacity: opacity));
   }
 
   static void paint(PaintRef ref) {
     final board = ref.watch(state);
     final PaintRef(:canvas, :size) = ref;
     final Size(:width, :height) = size;
-    final cols = board.width;
-    final rows = board.height;
+    final BoardData(:cols, :rows) = board;
     if (cols <= 0 || rows <= 0) return;
-
-    final dpr = MediaQuery.devicePixelRatioOf(ref.context);
-
-    // Black grid via shaders/marker.frag (saturated ink, mild fiber grain).
-    final gridPaint = markerPaint(size, Colors.black, dpr);
-
-    for (var i = 1; i < cols; i++) {
-      final x = width * i / cols;
-      canvas.drawLine(Offset(x, 0), Offset(x, height), gridPaint);
-    }
-    for (var i = 1; i < rows; i++) {
-      final y = height * i / rows;
-      canvas.drawLine(Offset(0, y), Offset(width, y), gridPaint);
-    }
 
     final cellWidth = width / cols;
     final cellHeight = height / rows;
-    final inset = math.min(cellWidth, cellHeight) * 0.15;
+    final minCell = math.min(cellWidth, cellHeight);
+    final markWidth = minCell * 0.15;
+    final gridInset = minCell * 0.05;
+
+    drawMarker(size: size, strokeWidth: minCell * 0.075, (paint) {
+      void drawWobblyLine(Offset start, Offset end, {required int seed}) {
+        final delta = end - start;
+        final direction = delta / delta.distance;
+        final normal = Offset(-direction.dy, direction.dx);
+
+        final path = Path()..moveTo(start.dx, start.dy);
+        const count = 14;
+        for (var i = 1; i <= count; i++) {
+          final t = i / count;
+          final point = Offset.lerp(start, end, t)!;
+          final falloff = math.sin(t * math.pi);
+          final jitter = i == count ? 0.0 : (_rng(seed + i * 17) - 0.5) * 0.015 * minCell * falloff;
+          final Offset(:dx, :dy) = point + normal * jitter;
+          path.lineTo(dx, dy);
+        }
+        canvas.drawPath(path, paint);
+      }
+
+      for (var i = 1; i < cols; i++) {
+        final x = width * i / cols;
+        drawWobblyLine(Offset(x, gridInset), Offset(x, height - gridInset), seed: 100 + i * 31);
+      }
+      for (var i = 1; i < rows; i++) {
+        final y = height * i / rows;
+        drawWobblyLine(Offset(gridInset, y), Offset(width - gridInset, y), seed: 200 + i * 37);
+      }
+    });
+
+    final inset = minCell * 0.25;
     final t = ref.watch(playerMarkAnimation);
 
     for (var row = 0; row < rows; row++) {
@@ -202,34 +233,25 @@ class Board extends RefWidget {
         final progress = currentMark == (row, col) ? t : 1.0;
         if (progress <= 0) continue;
 
-        // Player marks use [PlayerMark.color] (X orange-red, O cyan).
-        final paint = markerPaint(size, mark.color, dpr);
-
-        switch (mark) {
-          case .x:
-            final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
-
-            if (progress < 0.5) {
-              final t = progress * 2;
-              canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, t)!, paint);
-            } else {
-              canvas.drawLine(topLeft, bottomRight, paint);
-              final t = (progress - 0.5) * 2;
-              canvas.drawLine(
-                topRight,
-                Offset.lerp(topRight, bottomLeft, t.clamp(0.0, 1.0))!,
-                paint,
-              );
+        drawMarker(
+          (paint) {
+            switch (mark) {
+              case .x:
+                final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
+                final p1 = math.min(progress * 2, 1.0);
+                canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, p1)!, paint);
+                if (progress > 0.5) {
+                  final p2 = (progress - 0.5) * 2;
+                  canvas.drawLine(topRight, Offset.lerp(topRight, bottomLeft, p2)!, paint);
+                }
+              case .o:
+                canvas.drawArc(rect, -math.pi / 2, progress * math.pi * 2, false, paint);
             }
-          case .o:
-            canvas.drawArc(
-              rect,
-              -math.pi / 2,
-              progress.clamp(0.0, 1.0) * math.pi * 2,
-              false,
-              paint,
-            );
-        }
+          },
+          size: size,
+          player: mark,
+          strokeWidth: markWidth,
+        );
       }
     }
   }
@@ -240,103 +262,83 @@ class Board extends RefWidget {
       builder: (context) {
         return GestureDetector(
           behavior: .opaque,
-          onPanDown: (details) {
+          onPanDown: (details) async {
             if (playerMarkAnimation.isActive) return;
 
-            final box = context.findRenderObject()! as RenderBox;
-            final Size(:width, :height) = box.size;
-            final cols = state.width;
-            final rows = state.height;
-            if (cols <= 0 || rows <= 0 || width <= 0 || height <= 0) return;
+            final size = context.size;
+            if (size == null || size.isEmpty) return;
+            final Size(:width, :height) = size;
+            final BoardState(:cols, :rows) = state;
 
             final across = (details.localPosition.dx / width * cols).floor();
             final down = (details.localPosition.dy / height * rows).floor();
-            if (across < 0 || across >= cols || down < 0 || down >= rows) return;
 
-            mark(down, across);
+            currentMark = (down, across);
+            state.update(down, across, turn.value);
+            await playerMarkAnimation.forward(from: 0);
+            turn.value = switch (turn.value) {
+              .x => .o,
+              .o => .x,
+            };
           },
           child: const RefPaint(paint),
         );
       },
     );
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          fit: .cover,
-          image: AssetImage('assets/pexels-ksw-photographer-2372420-5467852.jpg'),
+    final child = Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 1, spreadRadius: 1)],
         ),
-      ),
-      child: PaperPadding(
-        child: Center(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 1, spreadRadius: 1)],
-            ),
-            child: RefPaint(
-              (ref) {
-                final PaintRef(:canvas, :size) = ref;
-                const baseColor = Color(0xFFFFFFFF);
+        child: RefPaint(
+          (ref) {
+            final PaintRef(:canvas, :size) = ref;
+            const baseColor = Color(0xFFFAF8F3);
 
-                // FlutterFragCoord is logical; uDpr maps grain into physical pixels (HiDPI/4K).
-                // Uniforms: uSize, uBaseColor (rgba 0-1), uGrain, uScale, uDpr — see shaders/paper.frag
-                paperShader
-                  ..setFloat(0, size.width)
-                  ..setFloat(1, size.height)
-                  ..setFloat(2, baseColor.r)
-                  ..setFloat(3, baseColor.g)
-                  ..setFloat(4, baseColor.b)
-                  ..setFloat(5, baseColor.a)
-                  ..setFloat(6, 0.04)
-                  ..setFloat(7, 0.5)
-                  ..setFloat(8, MediaQuery.devicePixelRatioOf(ref.context));
-                canvas.drawRect(Offset.zero & size, Paint()..shader = paperShader);
-              },
-              expanded: false,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisSize: .min,
-                  spacing: 8,
-                  children: [
-                    Flexible(
-                      child: RefAspectRatio(
-                        (ref) => ref.select(state, (data) => data.width / data.height),
-                        child: board,
-                      ),
-                    ),
-                    RefBuilder((context) {
-                      return Text(
-                        ' ${ref.watch(turn)}\'s move ',
-                        style: GoogleFonts.permanentMarker(fontSize: 24),
-                      );
-                    }),
-                  ],
+            paperShader
+              ..setFloat(0, size.width)
+              ..setFloat(1, size.height)
+              ..setFloat(2, baseColor.r)
+              ..setFloat(3, baseColor.g)
+              ..setFloat(4, baseColor.b)
+              ..setFloat(5, baseColor.a)
+              ..setFloat(6, 0.06)
+              ..setFloat(7, 0.6)
+              ..setFloat(8, _devicePixelRatio);
+            canvas.drawRect(Offset.zero & size, Paint()..shader = paperShader);
+          },
+          expanded: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Column(
+              mainAxisSize: .min,
+              spacing: 6,
+              children: [
+                Flexible(
+                  child: RefAspectRatio(
+                    (ref) => ref.select(state, (data) => data.cols / data.rows),
+                    child: board,
+                  ),
                 ),
-              ),
+                RefBuilder((context) {
+                  return Text(
+                    ' ${ref.watch(turn)}\'s move ',
+                    style: GoogleFonts.permanentMarker(fontSize: 24),
+                  );
+                }),
+              ],
             ),
           ),
         ),
       ),
     );
-  }
-}
 
-class PaperPadding extends RefLayout {
-  const PaperPadding({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  RefLayoutState<PaperPadding> createState() => _PaperPaddingState();
-}
-
-class _PaperPaddingState extends RefLayoutState<PaperPadding> {
-  late final child = delegate((widget) => widget.child);
-
-  @override
-  void performLayout(LayoutRef ref) {
-    final Size(:width, :height) = ref.constraints.biggest;
-    child.layoutPadding(.all(math.min(width, height) / 32));
+    return LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: .all(math.min(constraints.maxWidth, constraints.maxHeight) / 32),
+        child: child,
+      ),
+    );
   }
 }

@@ -11,7 +11,18 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(backgroundColor: Color(0xfff5c782), body: Board()),
+      home: Scaffold(
+        backgroundColor: Color(0xfff5c782),
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              fit: .cover,
+              image: AssetImage('assets/pexels-ksw-photographer-2372420-5467852.jpg'),
+            ),
+          ),
+          child: Board(),
+        ),
+      ),
     );
   }
 }
