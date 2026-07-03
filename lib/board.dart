@@ -175,7 +175,12 @@ class BoardTextures extends StatelessWidget {
         ..translate(dx, dy)
         ..scale(fittedScale)
         ..drawRect(Offset.zero & woodSize, Paint()..shader = woodShader)
-        ..restore();
+        ..restore()
+        ..drawPaint(
+          Paint()
+            ..color = Color(0xFFE7C28B)
+            ..blendMode = .multiply,
+        );
     }
   }
 
@@ -189,7 +194,7 @@ class BoardTextures extends StatelessWidget {
           child: const Center(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 1, spreadRadius: 1)],
+                boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
               child: RefPaint(
                 paint,
@@ -277,9 +282,124 @@ class Board extends StatelessWidget {
     final minCell = math.min(cellWidth, cellHeight);
 
     if (ref.watch(goMode)) {
-      // TODO: draw a Go board instead of a tic-tac-toe board,
-      // with PlayerMark.x as black and PlayerMark.o as white.
-      // Grid lines are drawn so that pieces rest on the grid intersections.
+      final linePaint = Paint()
+        ..color = const Color(0xFF1A1208)
+        ..strokeWidth = math.max(1.0, minCell * 0.03)
+        ..strokeCap = .square;
+
+      Offset intersectionOf(int col, int row) =>
+          Offset((col + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+
+      final topLeft = intersectionOf(0, 0);
+      final bottomRight = intersectionOf(cols - 1, rows - 1);
+
+      for (var col = 0; col < cols; col++) {
+        final Offset(:dx) = intersectionOf(col, 0);
+        canvas.drawLine(Offset(dx, topLeft.dy), Offset(dx, bottomRight.dy), linePaint);
+      }
+      for (var row = 0; row < rows; row++) {
+        final Offset(:dy) = intersectionOf(0, row);
+        canvas.drawLine(Offset(topLeft.dx, dy), Offset(bottomRight.dx, dy), linePaint);
+      }
+
+      final stoneRadius = minCell * 0.5;
+      final dropHeight = minCell * 1.8;
+      const impactAt = 0.68;
+
+      double heightAboveBoard(double progress) {
+        progress = progress.clamp(0.0, 1.0);
+        if (progress <= impactAt) {
+          return dropHeight * (1 - Curves.easeInQuad.transform(progress / impactAt));
+        }
+        final bounceT = (progress - impactAt) / (1 - impactAt);
+        final bounceHeight = dropHeight * 0.1;
+        return bounceHeight * math.sin(bounceT * math.pi) * math.pow(1 - bounceT, 1.25);
+      }
+
+      double impactSquash(double progress) {
+        progress = progress.clamp(0.0, 1.0);
+        if (progress < impactAt) return 1;
+        final sinceImpact = (progress - impactAt) / (1 - impactAt);
+        return 1 - 0.18 * math.exp(-sinceImpact * 7) * math.cos(sinceImpact * math.pi * 1.5);
+      }
+
+      ({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation})? layoutStone(
+        int row,
+        int col,
+        PlayerMark mark,
+        double progress,
+      ) {
+        if (progress <= 0) return null;
+
+        final restCenter = intersectionOf(col, row);
+        final height = heightAboveBoard(progress);
+        final squash = impactSquash(progress);
+        final radiusX = stoneRadius * (2 - squash);
+        final radiusY = stoneRadius * squash;
+        final center = restCenter.translate(0, -height + stoneRadius * (1 - squash));
+
+        return (
+          mark: mark,
+          stoneRect: .fromCenter(center: center, width: radiusX * 2, height: radiusY * 2),
+          shadowRect: .fromCircle(center: restCenter, radius: stoneRadius),
+          elevation: 2.0 + height * 0.1,
+        );
+      }
+
+      void drawStone(({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation}) stone) {
+        final (:mark, :stoneRect, shadowRect: _, elevation: _) = stone;
+        final isBlack = mark == .x;
+        final baseColor = isBlack ? const Color(0xFF101010) : const Color(0xFFE0DCD1);
+        canvas.drawOval(stoneRect, Paint()..color = baseColor);
+
+        final Rect(:center, :width, :height) = stoneRect;
+        final radiusX = width / 2;
+        final radiusY = height / 2;
+        const double stretchX = 1.75;
+        final highlightCenter = Offset(
+          (center.dx - radiusX * 0.075) / stretchX,
+          center.dy - radiusY * 0.7,
+        );
+        final highlightRadius = math.min(radiusX, radiusY) * 0.8;
+        canvas
+          ..save()
+          ..clipRRect(RRect.fromRectAndRadius(stoneRect, .circular(0x100000)))
+          ..transform(Matrix4.diagonal3Values(stretchX, 1, 1).storage)
+          ..drawCircle(
+            highlightCenter,
+            highlightRadius,
+            Paint()
+              ..shader = ui.Gradient.radial(highlightCenter, highlightRadius, [
+                if (isBlack) const Color(0x48FFFAED) else const Color(0xFFFFFAED),
+                const Color(0x00FFFAED),
+              ]),
+          )
+          ..restore();
+      }
+
+      final stones = <({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation})>[];
+      ({int row, int col, PlayerMark mark})? fallingStone;
+      for (var row = 0; row < rows; row++) {
+        for (var col = 0; col < cols; col++) {
+          final mark = board[row][col];
+          if (mark == null) continue;
+          if (currentMark == (row, col) && t < 1) {
+            fallingStone = (row: row, col: col, mark: mark);
+            continue;
+          }
+          if (layoutStone(row, col, mark, 1) case final stone?) stones.add(stone);
+        }
+      }
+      if (fallingStone case (:final row, :final col, :final mark)?) {
+        if (layoutStone(row, col, mark, t) case final stone?) stones.add(stone);
+      }
+
+      for (final (:shadowRect, :elevation, mark: _, stoneRect: _) in stones) {
+        canvas.drawShadow(Path()..addOval(shadowRect), Colors.black, elevation, true);
+      }
+      for (final stone in stones) {
+        drawStone(stone);
+      }
     } else {
       final markWidth = minCell * 0.15;
       final gridInset = minCell * 0.05;
@@ -375,6 +495,9 @@ class Board extends StatelessWidget {
 
             currentMark = (down, across);
             state.update(down, across, turn.value);
+            playerMarkAnimation.duration = goMode.value
+                ? const Duration(milliseconds: 400)
+                : const Duration(milliseconds: 200);
             await playerMarkAnimation.forward(from: 0);
             turn.value = switch (turn.value) {
               .x => .o,
