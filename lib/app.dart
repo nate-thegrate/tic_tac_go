@@ -27,7 +27,8 @@ Future<void> loadShaders() async {
   }
 
   final (paper, marker) = await paperMarkerFutures.wait;
-  BoardTextures.paperShader = paper.fragmentShader();
+  BoardTextures.boardPaperShader = paper.fragmentShader();
+  BoardTextures.backdropPaperShader = paper.fragmentShader();
   Board.markerProgram = marker;
 }
 

@@ -111,7 +111,24 @@ class BoardTextures extends StatelessWidget {
 
   static late final ui.ImageShader woodShader;
   static const woodSize = Size(4824.0, 3216.0);
-  static late final ui.FragmentShader paperShader;
+  static late final ui.FragmentShader boardPaperShader;
+  static late final ui.FragmentShader backdropPaperShader;
+
+  static void _paintPaper(ui.FragmentShader shader, Size size, Color baseColor, {
+    required double grain,
+    required double scale,
+  }) {
+    shader
+      ..setFloat(0, size.width)
+      ..setFloat(1, size.height)
+      ..setFloat(2, baseColor.r)
+      ..setFloat(3, baseColor.g)
+      ..setFloat(4, baseColor.b)
+      ..setFloat(5, baseColor.a)
+      ..setFloat(6, grain)
+      ..setFloat(7, scale)
+      ..setFloat(8, devicePixelRatio);
+  }
 
   static void paint(PaintRef ref) {
     final PaintRef(:canvas, :size) = ref;
@@ -131,19 +148,8 @@ class BoardTextures extends StatelessWidget {
         ..drawPaint(Paint()..color = Color(0xC0f5c782))
         ..restore();
     } else {
-      const baseColor = Color(0xFFFAF8F3);
-
-      paperShader
-        ..setFloat(0, size.width)
-        ..setFloat(1, size.height)
-        ..setFloat(2, baseColor.r)
-        ..setFloat(3, baseColor.g)
-        ..setFloat(4, baseColor.b)
-        ..setFloat(5, baseColor.a)
-        ..setFloat(6, 0.06)
-        ..setFloat(7, 0.6)
-        ..setFloat(8, devicePixelRatio);
-      canvas.drawRect(Offset.zero & size, Paint()..shader = paperShader);
+      _paintPaper(boardPaperShader, size, const Color(0xFFFAF8F3), grain: 0.06, scale: 0.6);
+      canvas.drawRect(Offset.zero & size, Paint()..shader = boardPaperShader);
     }
   }
 
@@ -151,19 +157,8 @@ class BoardTextures extends StatelessWidget {
     final PaintRef(:canvas, :size) = ref;
     final Size(:width, :height) = size;
     if (ref.watch(goMode)) {
-      const baseColor = Color(0xFF103018);
-
-      paperShader
-        ..setFloat(0, size.width)
-        ..setFloat(1, size.height)
-        ..setFloat(2, baseColor.r)
-        ..setFloat(3, baseColor.g)
-        ..setFloat(4, baseColor.b)
-        ..setFloat(5, baseColor.a)
-        ..setFloat(6, 0.04)
-        ..setFloat(7, 0.6)
-        ..setFloat(8, devicePixelRatio);
-      canvas.drawRect(Offset.zero & size, Paint()..shader = paperShader);
+      _paintPaper(backdropPaperShader, size, const Color(0xFF103018), grain: 0.04, scale: 0.6);
+      canvas.drawRect(Offset.zero & size, Paint()..shader = backdropPaperShader);
     } else {
       final Size(width: imageWidth, height: imageHeight) = woodSize;
       final fittedScale = math.max(width / imageWidth, height / imageHeight);
@@ -196,10 +191,12 @@ class BoardTextures extends StatelessWidget {
               decoration: BoxDecoration(
                 boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
-              child: RefPaint(
-                paint,
-                expanded: false,
-                child: Padding(padding: EdgeInsets.fromLTRB(18, 18, 18, 6), child: Board()),
+              child: RepaintBoundary(
+                child: RefPaint(
+                  paint,
+                  expanded: false,
+                  child: Padding(padding: EdgeInsets.fromLTRB(18, 18, 18, 6), child: Board()),
+                ),
               ),
             ),
           ),
@@ -212,9 +209,7 @@ class BoardTextures extends StatelessWidget {
 class Board extends StatelessWidget {
   const Board({super.key});
 
-  static final state = BoardState()
-    ..update(0, 0, .o)
-    ..update(1, 1, .x);
+  static final state = BoardState();
 
   static final turn = Get.it(PlayerMark.x);
 
@@ -242,7 +237,11 @@ class Board extends StatelessWidget {
     Paint paint({required double grain, double opacity = 1}) {
       final Size(:width, :height) = size;
       final ink = opacity >= 1 ? color : color.withValues(alpha: color.a * opacity);
-      final shader = _markerShaders[(ink, grain)] ??= markerProgram.fragmentShader()
+      // Uniforms are read at raster time, so re-apply them on every draw even for
+      // cached shader instances — otherwise a later setFloat on another draw can
+      // clobber this ink (most noticeable on the low-alpha cyan "O" pass).
+      final shader = _markerShaders[(ink, grain)] ??= markerProgram.fragmentShader();
+      shader
         ..setFloat(0, width)
         ..setFloat(1, height)
         ..setFloat(2, ink.r)
@@ -316,13 +315,6 @@ class Board extends StatelessWidget {
         return bounceHeight * math.sin(bounceT * math.pi) * math.pow(1 - bounceT, 1.25);
       }
 
-      double impactSquash(double progress) {
-        progress = progress.clamp(0.0, 1.0);
-        if (progress < impactAt) return 1;
-        final sinceImpact = (progress - impactAt) / (1 - impactAt);
-        return 1 - 0.18 * math.exp(-sinceImpact * 7) * math.cos(sinceImpact * math.pi * 1.5);
-      }
-
       ({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation})? layoutStone(
         int row,
         int col,
@@ -333,14 +325,11 @@ class Board extends StatelessWidget {
 
         final restCenter = intersectionOf(col, row);
         final height = heightAboveBoard(progress);
-        final squash = impactSquash(progress);
-        final radiusX = stoneRadius * (2 - squash);
-        final radiusY = stoneRadius * squash;
-        final center = restCenter.translate(0, -height + stoneRadius * (1 - squash));
+        final center = restCenter.translate(0, -height);
 
         return (
           mark: mark,
-          stoneRect: .fromCenter(center: center, width: radiusX * 2, height: radiusY * 2),
+          stoneRect: .fromCircle(center: center, radius: stoneRadius),
           shadowRect: .fromCircle(center: restCenter, radius: stoneRadius),
           elevation: 2.0 + height * 0.1,
         );
@@ -496,8 +485,8 @@ class Board extends StatelessWidget {
             currentMark = (down, across);
             state.update(down, across, turn.value);
             playerMarkAnimation.duration = goMode.value
-                ? const Duration(milliseconds: 400)
-                : const Duration(milliseconds: 200);
+                ? const Duration(milliseconds: 350)
+                : const Duration(milliseconds: 225);
             await playerMarkAnimation.forward(from: 0);
             turn.value = switch (turn.value) {
               .x => .o,
