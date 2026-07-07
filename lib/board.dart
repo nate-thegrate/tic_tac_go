@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,7 +25,7 @@ enum PlayerMark {
   };
 
   @override
-  String toString() => name.toUpperCase();
+  String toString({bool goMode = false}) => goMode ? this.goMode : name.toUpperCase();
 }
 
 /// A read-only view of the data in [BoardState].
@@ -35,9 +36,56 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   int get cols => _list.first.length;
   int get rows => _list.length;
 
+  /// The number of items in a row required to win.
+  int get winLength => switch ((smallest: math.min(rows, cols), biggest: math.max(rows, cols))) {
+    (smallest: 3, biggest: 3 || 4) => 3,
+    (smallest: _, biggest: 4 || 5) => 4,
+    (smallest: 3 || 4, biggest: _) => 4,
+    _ => 5,
+  };
+
+  /// If one of the players has won (by having a number of items in a row, straight or diagonally,
+  /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
+  PlayerMark? get winner {
+    final needed = winLength;
+    const directions = [
+      (0, 1), // horizontal →
+      (1, 0), // vertical ↓
+      (1, 1), // diagonal ↘
+      (1, -1), // diagonal ↙
+    ];
+
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < cols; col++) {
+        final mark = _list[row][col];
+        if (mark == null) continue;
+
+        for (final (dRow, dCol) in directions) {
+          final endRow = row + (needed - 1) * dRow;
+          final endCol = col + (needed - 1) * dCol;
+          if (endRow < 0 || endRow >= rows || endCol < 0 || endCol >= cols) continue;
+
+          var won = true;
+          for (var i = 1; i < needed; i++) {
+            if (_list[row + i * dRow][col + i * dCol] != mark) {
+              won = false;
+              break;
+            }
+          }
+          if (won) return mark;
+        }
+      }
+    }
+    return null;
+  }
+
   @protected
   @redeclare
   void get length => ();
+}
+
+extension on int {
+  int get clamped => math.min(math.max(this, 3), 19);
 }
 
 class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
@@ -47,13 +95,10 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
   @override
   BoardData get value => BoardData(_list);
   List<List<PlayerMark?>> _list;
-  set value(List<List<PlayerMark?>> list) {
-    _list = list;
-    notifyListeners();
-  }
 
   int get cols => _list.first.length;
   set cols(int value) {
+    value = value.clamped;
     if (value == cols) return;
     final newState = [for (final row in _list) List.generate(value, row.elementAtOrNull)];
     _list = newState;
@@ -62,6 +107,7 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
 
   int get rows => _list.length;
   set rows(int value) {
+    value = value.clamped;
     if (value == rows) return;
     final newState = [
       for (int i = 0; i < value; i++) _list.elementAtOrNull(i) ?? List.filled(cols, null),
@@ -114,7 +160,10 @@ class BoardTextures extends StatelessWidget {
   static late final ui.FragmentShader boardPaperShader;
   static late final ui.FragmentShader backdropPaperShader;
 
-  static void _paintPaper(ui.FragmentShader shader, Size size, Color baseColor, {
+  static void _paintPaper(
+    ui.FragmentShader shader,
+    Size size,
+    Color baseColor, {
     required double grain,
     required double scale,
   }) {
@@ -173,7 +222,7 @@ class BoardTextures extends StatelessWidget {
         ..restore()
         ..drawPaint(
           Paint()
-            ..color = Color(0xFFE7C28B)
+            ..color = const Color(0xFF6C4827)
             ..blendMode = .multiply,
         );
     }
@@ -191,11 +240,14 @@ class BoardTextures extends StatelessWidget {
               decoration: BoxDecoration(
                 boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
-              child: RepaintBoundary(
-                child: RefPaint(
-                  paint,
-                  expanded: false,
-                  child: Padding(padding: EdgeInsets.fromLTRB(18, 18, 18, 6), child: Board()),
+              child: RefPaint(
+                paint,
+                expanded: false,
+                child: ClipRect(
+                  child: BoardMenuWrapper(
+                    menu: Menu(),
+                    board: RepaintBoundary(child: Board()),
+                  ),
                 ),
               ),
             ),
@@ -283,7 +335,7 @@ class Board extends StatelessWidget {
     if (ref.watch(goMode)) {
       final linePaint = Paint()
         ..color = const Color(0xFF1A1208)
-        ..strokeWidth = math.max(1.0, minCell * 0.03)
+        ..strokeWidth = math.max(2.0, minCell * 0.04)
         ..strokeCap = .square;
 
       Offset intersectionOf(int col, int row) =>
@@ -405,9 +457,7 @@ class Board extends StatelessWidget {
             final t = i / count;
             final point = Offset.lerp(start, end, t)!;
             final falloff = math.sin(t * math.pi);
-            final jitter = i == count
-                ? 0.0
-                : (_rng(seed + i * 17) - 0.5) * 0.015 * minCell * falloff;
+            final jitter = i == count ? 0.0 : (_rng(seed + i) - 0.5) * 0.015 * minCell * falloff;
             final Offset(:dx, :dy) = point + normal * jitter;
             path.lineTo(dx, dy);
           }
@@ -416,11 +466,11 @@ class Board extends StatelessWidget {
 
         for (var i = 1; i < cols; i++) {
           final x = width * i / cols;
-          drawWobblyLine(Offset(x, gridInset), Offset(x, height - gridInset), seed: 100 + i * 31);
+          drawWobblyLine(Offset(x, gridInset), Offset(x, height - gridInset), seed: i);
         }
         for (var i = 1; i < rows; i++) {
           final y = height * i / rows;
-          drawWobblyLine(Offset(gridInset, y), Offset(width - gridInset, y), seed: 200 + i * 37);
+          drawWobblyLine(Offset(gridInset, y), Offset(width - gridInset, y), seed: i + 20);
         }
       });
 
@@ -472,15 +522,17 @@ class Board extends StatelessWidget {
         return GestureDetector(
           behavior: .opaque,
           onPanDown: (details) async {
-            if (playerMarkAnimation.isActive) return;
+            if (playerMarkAnimation.isActive || state.value.winner != null) return;
 
             final size = context.size;
             if (size == null || size.isEmpty) return;
+
             final Size(:width, :height) = size;
             final BoardState(:cols, :rows) = state;
 
             final across = (details.localPosition.dx / width * cols).floor();
             final down = (details.localPosition.dy / height * rows).floor();
+            if (state.value[down][across] != null) return;
 
             currentMark = (down, across);
             state.update(down, across, turn.value);
@@ -512,10 +564,112 @@ class Board extends StatelessWidget {
           ),
           RefBuilder((context) {
             final player = ref.watch(turn);
-            final playerText = ref.watch(goMode) ? player.goMode : player.toString();
-            return Text(' $playerText\'s move ', style: GoogleFonts.permanentMarker(fontSize: 24));
+            final winner = ref.select(state, (data) => data.winner);
+            final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+            return Text(
+              winner != null ? '$playerText wins!' : ' $playerText\'s move ',
+              style: GoogleFonts.permanentMarker(fontSize: 24),
+            );
           }),
         ],
+      ),
+    );
+  }
+}
+
+class BoardMenuWrapper extends RefLayout {
+  const BoardMenuWrapper({super.key, required this.board, required this.menu});
+
+  final Widget board;
+  final Widget menu;
+
+  @override
+  RefLayoutState<BoardMenuWrapper> createState() => _BoardMenuWrapperState();
+}
+
+class _BoardMenuWrapperState extends RefLayoutState<BoardMenuWrapper> {
+  late final board = delegate((widget) => widget.board);
+  late final menu = delegate((widget) => widget.menu);
+
+  @override
+  void performLayout(LayoutRef ref) {
+    final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
+    final maxSize = ref.constraints.biggest;
+    menu.layoutRect(Offset.zero & maxSize);
+    final boardSize = board.layout();
+    menu.offset = Offset(-t * maxSize.width, (boardSize.height - maxSize.height) / 2 * t);
+    board.offset = Offset(
+      ((maxSize.width - boardSize.width) / 2 + maxSize.width) * (1 - t),
+      (maxSize.height - boardSize.height) / 2 * (1 - t),
+    );
+    ref.size = Size.lerp(maxSize, boardSize, t)!;
+  }
+}
+
+class Menu extends StatelessWidget {
+  const Menu({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTextStyle(
+      style: GoogleFonts.permanentMarker(fontSize: 24, color: Colors.black),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              Text('Board size'),
+              FractionallySizedBox(
+                widthFactor: 19 / 20,
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Builder(
+                    builder: (context) {
+                      void handleGesture(PositionedGestureDetails details) async {
+                        final size = context.size;
+                        if (size == null || size.isEmpty) return;
+
+                        final Size(:width, :height) = size;
+                        Board.state
+                          ..cols = (details.localPosition.dx / width * 19).ceil()
+                          ..rows = (details.localPosition.dy / height * 19).ceil();
+                      }
+
+                      return GestureDetector(
+                        onPanDown: handleGesture,
+                        onPanUpdate: handleGesture,
+                        child: RefPaint((ref) {
+                          final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                          final BoardData(:rows, :cols) = ref.watch(Board.state);
+
+                          final opaque = Paint()..color = Colors.black;
+                          final translucent = Paint()..color = opaque.color.withValues(alpha: 0.25);
+                          for (var row = 0; row < 19; row++) {
+                            for (var col = 0; col < 19; col++) {
+                              canvas.drawRect(
+                                Rect.fromLTWH(
+                                  width * col / 19,
+                                  height * row / 19,
+                                  width / 19,
+                                  height / 19,
+                                ).deflate(width / 150),
+                                row < rows && col < cols ? opaque : translucent,
+                              );
+                            }
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              RefBuilder((context) {
+                return Text(
+                  'Get ${ref.select(Board.state, (data) => data.winLength)} in a row to win',
+                );
+              }),
+            ],
+          ),
+        ),
       ),
     );
   }

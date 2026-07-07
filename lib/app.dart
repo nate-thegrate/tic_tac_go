@@ -4,7 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/board.dart';
 
-final goMode = Get.it(true);
+final playing = Get.compute((ref) => ref.watch(playingTransition.status).isForwardOrCompleted);
+final playingTransition = Get.vsync(duration: const Duration(milliseconds: 175));
+
+final goMode = Get.compute((ref) => ref.watch(goModeTransition.status).isForwardOrCompleted);
+final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
+
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 
 Future<void> loadShaders() async {
@@ -35,24 +40,82 @@ Future<void> loadShaders() async {
 class App extends StatelessWidget {
   const App({super.key});
 
+  static Widget _buildGoBoard(BuildContext context) {
+    return GetScope(substitutes: {Substitution.value(goMode, true)}, child: const BoardTextures());
+  }
+
+  static Widget _buildGoReveal(BuildContext context) {
+    const revealSoftness = 0.22;
+    final progress = ref.watch(goModeTransition);
+    return ShaderMask(
+      blendMode: .dstIn,
+      shaderCallback: (Rect bounds) {
+        final softness = revealSoftness;
+        final reveal = ui.lerpDouble(-softness, 1.0 + softness, progress)!;
+        final start = (reveal - softness).clamp(0.0, 1.0);
+        final end = (reveal + softness).clamp(0.0, 1.0);
+
+        final Gradient gradient;
+        if (start < end) {
+          gradient = LinearGradient(
+            begin: .centerLeft,
+            end: .centerRight,
+            colors: const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+            stops: [start, end],
+          );
+        } else {
+          gradient = LinearGradient(
+            colors: progress >= 0.5
+                ? const [Color(0xFFFFFFFF), Color(0xFFFFFFFF)]
+                : const [Color(0x00FFFFFF), Color(0x00FFFFFF)],
+          );
+        }
+        return gradient.createShader(bounds);
+      },
+      child: const Builder(builder: _buildGoBoard),
+    );
+  }
+
   static Widget _buildFab(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: goMode.toggle,
-      label: Text('Go mode'),
-      icon: IgnorePointer(
-        child: Checkbox(value: ref.watch(goMode), onChanged: (_) {}),
-      ),
+    return Row(
+      mainAxisSize: .min,
+      spacing: 16,
+      children: [
+        FilledButton.tonalIcon(
+          onPressed: playingTransition.toggle,
+          label: Text('playing'),
+          icon: IgnorePointer(
+            child: Checkbox(value: ref.watch(playing), onChanged: (_) {}),
+          ),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: goModeTransition.toggle,
+          label: Text('Go mode'),
+          icon: IgnorePointer(
+            child: Checkbox(value: ref.watch(goMode), onChanged: (_) {}),
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: Color(0xfff5c782),
-        body: BoardTextures(),
-        floatingActionButton: RefBuilder(_buildFab),
+        body: Stack(
+          fit: .expand,
+          children: [
+            GetScope(
+              substitutes: {Substitution.value(goMode, false)},
+              child: const BoardTextures(),
+            ),
+            const RefBuilder(_buildGoReveal),
+          ],
+        ),
+        floatingActionButton: const RefBuilder(_buildFab),
       ),
     );
   }
