@@ -19,6 +19,11 @@ enum PlayerMark {
     o => const Color(0xFF0098A0),
   };
 
+  Color get winnerGlow => switch (this) {
+    x => const Color(0xFFFFE6B5),
+    o => const Color(0xFFF8FCFF),
+  };
+
   String get goMode => switch (this) {
     x => 'Black',
     o => 'White',
@@ -33,20 +38,20 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   BoardData(List<List<PlayerMark?>> list)
     : _list = UnmodifiableListView(list.map(UnmodifiableListView.new));
 
-  int get cols => _list.first.length;
+  int get cols => first.length;
   int get rows => _list.length;
 
   /// The number of items in a row required to win.
-  int get winLength => switch ((smallest: math.min(rows, cols), biggest: math.max(rows, cols))) {
-    (smallest: 3, biggest: 3 || 4) => 3,
-    (smallest: _, biggest: 4 || 5) => 4,
-    (smallest: 3 || 4, biggest: _) => 4,
-    _ => 5,
-  };
+  int get winLength => math.min(math.min(rows, cols), 5);
 
-  /// If one of the players has won (by having a number of items in a row, straight or diagonally,
-  /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
-  PlayerMark? get winner {
+  static final _winningRunCache = Expando<List<({int row, int col})>>();
+
+  /// The first winning run found, if any.
+  List<({int row, int col})>? get winningRun {
+    if (_winningRunCache[this] case final cached?) {
+      return cached.isEmpty ? null : cached;
+    }
+
     final needed = winLength;
     const directions = [
       (0, 1), // horizontal →
@@ -72,12 +77,24 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
               break;
             }
           }
-          if (won) return mark;
+          if (won) {
+            return _winningRunCache[this] = [
+              for (var i = 0; i < needed; i++) (row: row + i * dRow, col: col + i * dCol),
+            ];
+          }
         }
       }
     }
+    _winningRunCache[this] = [];
     return null;
   }
+
+  /// If one of the players has won (by having a number of items in a row, straight or diagonally,
+  /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
+  PlayerMark? get winner => switch (winningRun?.firstOrNull) {
+    (:final col, :final row) => _list[row][col],
+    null => null,
+  };
 
   @protected
   @redeclare
@@ -85,7 +102,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
 }
 
 extension on int {
-  int get clamped => math.min(math.max(this, 3), 19);
+  int get clampedBoardSize => math.min(math.max(this, 3), 19);
 }
 
 class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
@@ -93,12 +110,13 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
     : _list = List.generate(height, (_) => List.filled(width, null));
 
   @override
-  BoardData get value => BoardData(_list);
+  BoardData get value => _value;
+  late BoardData _value = BoardData(_list);
   List<List<PlayerMark?>> _list;
 
   int get cols => _list.first.length;
   set cols(int value) {
-    value = value.clamped;
+    value = value.clampedBoardSize;
     if (value == cols) return;
     final newState = [for (final row in _list) List.generate(value, row.elementAtOrNull)];
     _list = newState;
@@ -107,7 +125,7 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
 
   int get rows => _list.length;
   set rows(int value) {
-    value = value.clamped;
+    value = value.clampedBoardSize;
     if (value == rows) return;
     final newState = [
       for (int i = 0; i < value; i++) _list.elementAtOrNull(i) ?? List.filled(cols, null),
@@ -141,6 +159,7 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
   @override
   void notifyListeners() {
     assert(_isValid());
+    _value = BoardData(_list);
     super.notifyListeners();
   }
 
@@ -234,19 +253,18 @@ class BoardTextures extends StatelessWidget {
       paintBackdrop,
       child: LayoutBuilder(
         builder: (context, constraints) => Padding(
-          padding: .all(math.min(constraints.maxWidth, constraints.maxHeight) / 32),
+          padding: .all(constraints.biggest.shortestSide / 32),
           child: const Center(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
-              child: RefPaint(
-                paint,
-                expanded: false,
-                child: ClipRect(
-                  child: BoardMenuWrapper(
-                    menu: Menu(),
-                    board: RepaintBoundary(child: Board()),
+              child: RepaintBoundary(
+                child: RefPaint(
+                  paint,
+                  expanded: false,
+                  child: ClipRect(
+                    child: BoardMenuWrapper(menu: Menu(), board: Board()),
                   ),
                 ),
               ),
@@ -257,6 +275,15 @@ class BoardTextures extends StatelessWidget {
     );
   }
 }
+
+typedef StoneData = ({
+  int row,
+  int col,
+  PlayerMark mark,
+  Rect stoneRect,
+  Rect shadowRect,
+  double elevation,
+});
 
 class Board extends StatelessWidget {
   const Board({super.key});
@@ -367,12 +394,9 @@ class Board extends StatelessWidget {
         return bounceHeight * math.sin(bounceT * math.pi) * math.pow(1 - bounceT, 1.25);
       }
 
-      ({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation})? layoutStone(
-        int row,
-        int col,
-        PlayerMark mark,
-        double progress,
-      ) {
+      final winningCells = {...?board.winningRun};
+
+      StoneData? layoutStone(int row, int col, PlayerMark mark, double progress) {
         if (progress <= 0) return null;
 
         final restCenter = intersectionOf(col, row);
@@ -380,6 +404,8 @@ class Board extends StatelessWidget {
         final center = restCenter.translate(0, -height);
 
         return (
+          row: row,
+          col: col,
           mark: mark,
           stoneRect: .fromCircle(center: center, radius: stoneRadius),
           shadowRect: .fromCircle(center: restCenter, radius: stoneRadius),
@@ -387,8 +413,8 @@ class Board extends StatelessWidget {
         );
       }
 
-      void drawStone(({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation}) stone) {
-        final (:mark, :stoneRect, shadowRect: _, elevation: _) = stone;
+      void drawStone(StoneData stone) {
+        final (:mark, :stoneRect, row: _, col: _, shadowRect: _, elevation: _) = stone;
         final isBlack = mark == .x;
         final baseColor = isBlack ? const Color(0xFF101010) : const Color(0xFFE0DCD1);
         canvas.drawOval(stoneRect, Paint()..color = baseColor);
@@ -418,7 +444,7 @@ class Board extends StatelessWidget {
           ..restore();
       }
 
-      final stones = <({PlayerMark mark, Rect stoneRect, Rect shadowRect, double elevation})>[];
+      final stones = <StoneData>[];
       ({int row, int col, PlayerMark mark})? fallingStone;
       for (var row = 0; row < rows; row++) {
         for (var col = 0; col < cols; col++) {
@@ -435,10 +461,41 @@ class Board extends StatelessWidget {
         if (layoutStone(row, col, mark, t) case final stone?) stones.add(stone);
       }
 
-      for (final (:shadowRect, :elevation, mark: _, stoneRect: _) in stones) {
+      final normalStones = <StoneData>[];
+      final winningStones = <StoneData>[];
+      for (final stone in stones) {
+        if (winningCells.contains((row: stone.row, col: stone.col))) {
+          winningStones.add(stone);
+        } else {
+          normalStones.add(stone);
+        }
+      }
+
+      for (final (:shadowRect, :elevation, mark: _, stoneRect: _, row: _, col: _) in stones) {
         canvas.drawShadow(Path()..addOval(shadowRect), Colors.black, elevation, true);
       }
-      for (final stone in stones) {
+      for (final stone in normalStones) {
+        drawStone(stone);
+      }
+      for (final stone in winningStones) {
+        final stoneRect = stone.stoneRect;
+        final Rect(:center) = stoneRect;
+        final winnerGlow = stone.mark.winnerGlow;
+        final glowRadius = stoneRect.shortestSide / 2 * 1.5;
+        canvas.drawCircle(
+          center,
+          glowRadius,
+          Paint()
+            ..blendMode = .screen
+            ..shader = ui.Gradient.radial(
+              center,
+              glowRadius,
+              [winnerGlow, winnerGlow, winnerGlow.withValues(alpha: 0)],
+              const [0.0, 0.7, 1.0],
+            ),
+        );
+      }
+      for (final stone in winningStones) {
         drawStone(stone);
       }
     } else {
@@ -512,6 +569,18 @@ class Board extends StatelessWidget {
           );
         }
       }
+
+      if (board.winningRun case final cells?) {
+        final List(:first, :last) = cells;
+        final start = Offset((first.col + 0.5) * cellWidth, (first.row + 0.5) * cellHeight);
+        final end = Offset((last.col + 0.5) * cellWidth, (last.row + 0.5) * cellHeight);
+        final delta = end - start;
+        final pad = delta / delta.distance * (minCell / 2);
+
+        drawMarker(size: size, strokeWidth: minCell * 0.075, (paint) {
+          canvas.drawLine(start - pad, end + pad, paint);
+        });
+      }
     }
   }
 
@@ -524,10 +593,7 @@ class Board extends StatelessWidget {
           onPanDown: (details) async {
             if (playerMarkAnimation.isActive || state.value.winner != null) return;
 
-            final size = context.size;
-            if (size == null || size.isEmpty) return;
-
-            final Size(:width, :height) = size;
+            final Size(:width, :height) = context.size!;
             final BoardState(:cols, :rows) = state;
 
             final across = (details.localPosition.dx / width * cols).floor();
@@ -639,7 +705,10 @@ class Menu extends StatelessWidget {
                         onPanUpdate: handleGesture,
                         child: RefPaint((ref) {
                           final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                          final BoardData(:rows, :cols) = ref.watch(Board.state);
+                          final (rows, cols) = ref.select(
+                            Board.state,
+                            (data) => (data.rows, data.cols),
+                          );
 
                           final opaque = Paint()..color = Colors.black;
                           final translucent = Paint()..color = opaque.color.withValues(alpha: 0.25);
