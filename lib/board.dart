@@ -20,8 +20,8 @@ enum PlayerMark {
   };
 
   Color get winnerGlow => switch (this) {
-    x => const Color(0xFFFFE6B5),
-    o => const Color(0xFFF8FCFF),
+    x => const Color(0xFFFFF1D4),
+    o => const Color(0xFFFFFFFF),
   };
 
   String get goMode => switch (this) {
@@ -106,8 +106,8 @@ extension on int {
 }
 
 class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
-  BoardState([int width = 3, int height = 3])
-    : _list = List.generate(height, (_) => List.filled(width, null));
+  BoardState([int rows = 3, int cols = 3])
+    : _list = List.generate(rows, (_) => List.filled(cols, null));
 
   @override
   BoardData get value => _value;
@@ -134,31 +134,21 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
     notifyListeners();
   }
 
-  void update(int down, int across, PlayerMark? mark) {
-    final oldValue = _list[down][across];
+  void update(int row, int col, PlayerMark? mark) {
+    final oldValue = _list[row][col];
     if (mark == oldValue) return;
-    _list[down][across] = mark;
+    _list[row][col] = mark;
     notifyListeners();
   }
 
-  bool _isValid() {
-    if (kDebugMode) {
-      final firstSublistLength = _list.first.length;
-      for (final (index, row) in _list.indexed.skip(1)) {
-        if (row.length != firstSublistLength) {
-          throw StateError(
-            'First row is $firstSublistLength wide, but row ${index + 1} is ${row.length}',
-          );
-        }
-      }
-    }
-    return true;
+  void clear() {
+    _list = List.generate(rows, (_) => List.filled(cols, null));
+    notifyListeners();
   }
 
   @protected
   @override
   void notifyListeners() {
-    assert(_isValid());
     _value = BoardData(_list);
     super.notifyListeners();
   }
@@ -260,13 +250,7 @@ class BoardTextures extends StatelessWidget {
                 boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
               child: RepaintBoundary(
-                child: RefPaint(
-                  paint,
-                  expanded: false,
-                  child: ClipRect(
-                    child: BoardMenuWrapper(menu: Menu(), board: Board()),
-                  ),
-                ),
+                child: RefPaint(paint, expanded: false, child: ClipRect(child: MainContent())),
               ),
             ),
           ),
@@ -303,12 +287,21 @@ class Board extends StatelessWidget {
   static final history = <(int row, int col)>[];
 
   static final turn = Get.it(PlayerMark.x);
-  void switchTurn() {
+  static void switchTurn() {
     turn.value = switch (turn.value) {
       .x => .o,
       .o => .x,
     };
   }
+
+  static void undo([_]) {
+    if (history.isEmpty) return;
+    final (row, col) = history.removeLast();
+    state.update(row, col, null);
+    switchTurn();
+  }
+
+  static void reset() {}
 
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();
@@ -497,7 +490,6 @@ class Board extends StatelessWidget {
           center,
           glowRadius,
           Paint()
-            ..blendMode = .screen
             ..shader = ui.Gradient.radial(
               center,
               glowRadius,
@@ -513,6 +505,12 @@ class Board extends StatelessWidget {
 
       drawMarker(size: size, strokeWidth: minCell * 0.075, (paint) {
         void drawWobblyLine(Offset start, Offset end, {required int seed}) {
+          if (minCell < 60) {
+            // Don't make it wobbly if the grid is small
+            canvas.drawLine(start, end, paint);
+            return;
+          }
+
           final delta = end - start;
           final direction = delta / delta.distance;
           final normal = Offset(-direction.dy, direction.dx);
@@ -597,307 +595,409 @@ class Board extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final board = Builder(
-      builder: (context) {
-        return GestureDetector(
+    return GestureDetector(
+      behavior: .opaque,
+      onPanDown: (details) async {
+        if (playerMarkAnimation.isActive || state.value.winner != null) return;
+
+        final Size(:width, :height) = context.size!;
+        final BoardState(:cols, :rows) = state;
+
+        final across = (details.localPosition.dx / width * cols).floor();
+        final down = (details.localPosition.dy / height * rows).floor();
+        if (state.value[down][across] != null) return;
+
+        history.add(currentMark = (down, across));
+        state.update(down, across, turn.value);
+        playerMarkAnimation.duration = goMode.value
+            ? const Duration(milliseconds: 300)
+            : const Duration(milliseconds: 225);
+        await playerMarkAnimation.forward(from: 0);
+        switchTurn();
+      },
+      child: const RefPaint(paint),
+    );
+  }
+}
+
+class MainContent extends StatelessWidget {
+  const MainContent({super.key});
+
+  static const padding = 12.0;
+
+  static void _playArrow(PaintRef ref) {
+    final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+    canvas.drawPath(
+      Path()
+        ..lineTo(width, height / 2)
+        ..lineTo(0, height)
+        ..close(),
+      Paint()..color = Black((ref.watch(playingTransition) * 2 - 1).abs()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomBar = Row(
+      mainAxisSize: .min,
+      mainAxisAlignment: .center,
+      children: [
+        GestureDetector(
           behavior: .opaque,
           onPanDown: (details) async {
-            if (playerMarkAnimation.isActive || state.value.winner != null) return;
-
-            final Size(:width, :height) = context.size!;
-            final BoardState(:cols, :rows) = state;
-
-            final across = (details.localPosition.dx / width * cols).floor();
-            final down = (details.localPosition.dy / height * rows).floor();
-            if (state.value[down][across] != null) return;
-
-            history.add(currentMark = (down, across));
-            state.update(down, across, turn.value);
-            playerMarkAnimation.duration = goMode.value
-                ? const Duration(milliseconds: 300)
-                : const Duration(milliseconds: 225);
-            await playerMarkAnimation.forward(from: 0);
-            switchTurn();
+            await playingTransition.reverse();
+            Board.state.clear();
+            Board.history.clear();
           },
-          child: const RefPaint(paint),
-        );
-      },
+          child: SizedBox.square(
+            dimension: 48,
+            child: RefPaint((ref) {
+              final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+              const strokeWidth = 5.0;
+              const xPad = 16.0;
+              const yPad = 12.0;
+
+              final strokePaint = Paint()
+                ..style = .stroke
+                ..strokeWidth = strokeWidth
+                ..strokeCap = .round
+                ..color = Black(math.max(ref.watch(playingTransition) * 2 - 1, 0));
+              canvas.drawPath(
+                Path()
+                  ..moveTo(width - xPad, yPad)
+                  ..lineTo(xPad, height / 2)
+                  ..lineTo(width - xPad, height - yPad),
+                strokePaint,
+              );
+            }),
+          ),
+        ),
+        GestureDetector(
+          behavior: .opaque,
+          onPanDown: Board.undo,
+          child: SizedBox.square(
+            dimension: 48,
+            child: RefPaint((ref) {
+              final PaintRef(:canvas, :size) = ref;
+              const strokeWidth = 5.0;
+              const arrowWidth = 12.0;
+
+              final Offset(:dx, :dy) = size.center(Offset.zero);
+              final angle = 5 * math.pi / 6;
+              final transform = Matrix4.identity()
+                ..translateByDouble(dx, dy, 0, 1)
+                ..rotateZ(angle)
+                ..translateByDouble(-dx, -dy, 0, 1);
+
+              final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
+              final paint = Paint()
+                ..color = Black(math.max(ref.watch(playingTransition) * 2 - 1, 0));
+
+              canvas
+                ..save()
+                ..transform(transform.storage)
+                ..drawPath(
+                  Path()
+                    ..moveTo(size.width / 2, size.height - arrowWidth / 2)
+                    ..relativeLineTo(0, -arrowWidth)
+                    ..relativeLineTo(arrowWidth * root3over2, arrowWidth / 2)
+                    ..close(),
+                  paint,
+                )
+                ..drawArc(
+                  arcRect,
+                  0,
+                  -math.pi * 3 / 2,
+                  false,
+                  paint
+                    ..style = .stroke
+                    ..strokeWidth = strokeWidth
+                    ..strokeCap = .round,
+                )
+                ..restore();
+            }),
+          ),
+        ),
+        Expanded(
+          child: GestureDetector(
+            behavior: .opaque,
+            onPanDown: (details) {
+              playing.value = true;
+            },
+            child: RefBuilder((context) {
+              final player = ref.watch(Board.turn);
+              final winner = ref.select(Board.state, (data) => data.winner);
+              final t = ref.watch(playingTransition);
+              final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+              final TextSpan textSpan;
+              if (t < 0.5) {
+                textSpan = const TextSpan(
+                  text: 'Play  ',
+                  children: [
+                    WidgetSpan(
+                      alignment: .middle,
+                      child: SizedBox(
+                        width: 12 * root3over2,
+                        height: 12,
+                        child: RefPaint(_playArrow),
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                textSpan = TextSpan(
+                  text: winner != null ? '$playerText wins!' : ' $playerText\'s move ',
+                );
+              }
+              return Text.rich(
+                textSpan,
+                style: GoogleFonts.permanentMarker(
+                  fontSize: 24,
+                  color: Color.from(alpha: (2 * t - 1).abs(), red: 0, green: 0, blue: 0),
+                ),
+                textAlign: .center,
+              );
+            }),
+          ),
+        ),
+        const SizedBox(width: 48),
+        GestureDetector(
+          onPanDown: (details) {
+            goMode.toggle();
+          },
+          child: SizedBox.square(
+            dimension: 48,
+            child: RefPaint(
+              (ref) {
+                ref.canvas.drawRect(
+                  Offset.zero & ref.size,
+                  Paint()
+                    ..color = ref.watch(goMode) ? const Color(0x60FFFFFF) : const Color(0x60F5C782),
+                );
+              },
+              child: Padding(
+                padding: const .all(3),
+                child: RefPaint((ref) {
+                  final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                  if (ref.watch(goMode)) {
+                    final paint = Paint()
+                      ..style = .stroke
+                      ..strokeWidth = 3
+                      ..strokeCap = .round;
+                    const pad = 4.0;
+                    canvas
+                      ..drawLine(Offset(width / 3, pad), Offset(width / 3, height - pad), paint)
+                      ..drawLine(
+                        Offset(width * 2 / 3, pad),
+                        Offset(width * 2 / 3, height - pad),
+                        paint,
+                      )
+                      ..drawLine(Offset(pad, height / 3), Offset(width - pad, height / 3), paint)
+                      ..drawLine(
+                        Offset(pad, height * 2 / 3),
+                        Offset(width - pad, height * 2 / 3),
+                        paint,
+                      );
+                  } else {
+                    canvas
+                      ..drawRect(
+                        Rect.fromLTWH(width / 4, height / 4, width / 2, height / 2),
+                        Paint()
+                          ..style = .stroke
+                          ..strokeWidth = 3,
+                      )
+                      ..drawCircle(
+                        Offset(width / 4, height / 4),
+                        width / 4,
+                        Paint()..color = const Color(0xFF101010),
+                      )
+                      ..drawCircle(
+                        Offset(width * 3 / 4, height * 3 / 4),
+                        width / 4,
+                        Paint()..color = const Color(0xFFFFFAED),
+                      );
+                  }
+                }),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
 
     return Padding(
-      padding: .all(12),
+      padding: const .all(padding),
       child: Column(
         mainAxisSize: .min,
         spacing: 16,
         children: [
           Flexible(
-            child: RefAspectRatio(
-              (ref) => ref.select(state, (data) => data.cols / data.rows),
-              child: board,
+            child: _MainContentLayout(
+              menu: Menu(),
+              board: RefAspectRatio(
+                (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
+                child: Board(),
+              ),
             ),
           ),
-          Row(
-            mainAxisSize: .min,
-            mainAxisAlignment: .center,
-            children: [
-              GestureDetector(
-                behavior: .opaque,
-                onPanDown: (details) {
-                  playing.value = false;
-                },
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: RefPaint((ref) {
-                    final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                    const strokeWidth = 5.0;
-                    const xPad = 16.0;
-                    const yPad = 12.0;
-
-                    final strokePaint = Paint()
-                      ..style = .stroke
-                      ..strokeWidth = strokeWidth
-                      ..strokeCap = .round;
-                    canvas.drawPath(
-                      Path()
-                        ..moveTo(width - xPad, yPad)
-                        ..lineTo(xPad, height / 2)
-                        ..lineTo(width - xPad, height - yPad),
-                      strokePaint,
-                    );
-                  }),
-                ),
-              ),
-              GestureDetector(
-                behavior: .opaque,
-                onPanDown: (details) {
-                  if (history.isEmpty) return;
-                  final (row, col) = history.removeLast();
-                  state.update(row, col, null);
-                  switchTurn();
-                },
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: RefPaint((ref) {
-                    final PaintRef(:canvas, :size) = ref;
-                    const strokeWidth = 5.0;
-                    const arrowWidth = 12.0;
-
-                    final Offset(:dx, :dy) = size.center(Offset.zero);
-                    final angle = 5 * math.pi / 6;
-                    final transform = Matrix4.identity()
-                      ..translateByDouble(dx, dy, 0, 1)
-                      ..rotateZ(angle)
-                      ..translateByDouble(-dx, -dy, 0, 1);
-
-                    const root3over2 = 0.8660254037844386;
-
-                    final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
-                    final strokePaint = Paint()
-                      ..style = .stroke
-                      ..strokeWidth = strokeWidth
-                      ..strokeCap = .round;
-                    canvas
-                      ..save()
-                      ..transform(transform.storage)
-                      ..drawArc(arcRect, 0, -math.pi * 3 / 2, false, strokePaint)
-                      ..drawPath(
-                        Path()
-                          ..moveTo(size.width / 2, size.height - arrowWidth / 2)
-                          ..relativeLineTo(0, -arrowWidth)
-                          ..relativeLineTo(arrowWidth * root3over2, arrowWidth / 2)
-                          ..close(),
-                        Paint(),
-                      )
-                      ..restore();
-                  }),
-                ),
-              ),
-              Expanded(
-                child: RefBuilder((context) {
-                  final player = ref.watch(turn);
-                  final winner = ref.select(state, (data) => data.winner);
-                  final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
-                  return Text(
-                    winner != null ? '$playerText wins!' : ' $playerText\'s move ',
-                    style: GoogleFonts.permanentMarker(fontSize: 24),
-                    textAlign: .center,
-                  );
-                }),
-              ),
-              const SizedBox(width: 48),
-              GestureDetector(
-                onPanDown: (details) {
-                  goMode.toggle();
-                },
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: RefPaint(
-                    (ref) {
-                      ref.canvas.drawRect(
-                        Offset.zero & ref.size,
-                        Paint()
-                          ..color = ref.watch(goMode)
-                              ? const Color(0x60FFFFFF)
-                              : const Color(0xC0F5C782),
-                      );
-                    },
-                    child: Padding(
-                      padding: const .all(3),
-                      child: RefPaint((ref) {
-                        final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                        if (ref.watch(goMode)) {
-                          final paint = Paint()
-                            ..style = .stroke
-                            ..strokeWidth = 3
-                            ..strokeCap = .round;
-                          const pad = 4.0;
-                          canvas
-                            ..drawLine(
-                              Offset(width / 3, pad),
-                              Offset(width / 3, height - pad),
-                              paint,
-                            )
-                            ..drawLine(
-                              Offset(width * 2 / 3, pad),
-                              Offset(width * 2 / 3, height - pad),
-                              paint,
-                            )
-                            ..drawLine(
-                              Offset(pad, height / 3),
-                              Offset(width - pad, height / 3),
-                              paint,
-                            )
-                            ..drawLine(
-                              Offset(pad, height * 2 / 3),
-                              Offset(width - pad, height * 2 / 3),
-                              paint,
-                            );
-                        } else {
-                          canvas
-                            ..drawRect(
-                              Rect.fromLTWH(width / 4, height / 4, width / 2, height / 2),
-                              Paint()
-                                ..style = .stroke
-                                ..strokeWidth = 3,
-                            )
-                            ..drawCircle(
-                              Offset(width / 4, height / 4),
-                              width / 4,
-                              Paint()..color = const Color(0xFF101010),
-                            )
-                            ..drawCircle(
-                              Offset(width * 3 / 4, height * 3 / 4),
-                              width / 4,
-                              Paint()..color = const Color(0xFFFFFAED),
-                            );
-                        }
-                      }),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          bottomBar,
         ],
       ),
     );
   }
 }
 
-class BoardMenuWrapper extends RefLayout {
-  const BoardMenuWrapper({super.key, required this.board, required this.menu});
+class _MainContentLayout extends RefLayout {
+  const _MainContentLayout({required this.board, required this.menu});
 
   final Widget board;
   final Widget menu;
 
   @override
-  RefLayoutState<BoardMenuWrapper> createState() => _BoardMenuWrapperState();
+  RefLayoutState<_MainContentLayout> createState() => _MainContentLayoutState();
 }
 
-class _BoardMenuWrapperState extends RefLayoutState<BoardMenuWrapper> {
+class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
   late final board = delegate((widget) => widget.board);
   late final menu = delegate((widget) => widget.menu);
 
   @override
   void performLayout(LayoutRef ref) {
-    final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
     final maxSize = ref.constraints.biggest;
+    final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
+    final glowSpread = ref.select(Board.state, (data) {
+      return math.min(maxSize.width / data.cols, maxSize.height / data.rows) * 0.25;
+    });
     menu.layoutRect(Offset.zero & maxSize);
     final boardSize = board.layout();
     menu.offset = Offset(-t * maxSize.width, (boardSize.height - maxSize.height) / 2 * t);
     board.offset = Offset(
-      ((maxSize.width - boardSize.width) / 2 + maxSize.width) * (1 - t),
+      ((maxSize.width - boardSize.width) / 2 + maxSize.width + MainContent.padding + glowSpread) *
+          (1 - t),
       (maxSize.height - boardSize.height) / 2 * (1 - t),
     );
     ref.size = Size.lerp(maxSize, boardSize, t)!;
   }
 }
 
+enum MenuPage { players, boardSize, rules }
+
 class Menu extends StatelessWidget {
   const Menu({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTextStyle(
-      style: GoogleFonts.permanentMarker(fontSize: 24, color: Colors.black),
-      child: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Text('Board size'),
-              FractionallySizedBox(
-                widthFactor: 19 / 20,
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Builder(
-                    builder: (context) {
-                      void handleGesture(PositionedGestureDetails details) async {
-                        final Offset(:dx, :dy) = details.localPosition;
-                        final Size(:width, :height) = context.size!;
-                        Board.state
-                          ..cols = (dx / width * 19).ceil()
-                          ..rows = (dy / height * 19).ceil();
+    return Center(
+      child: Column(
+        children: [
+          Flexible(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Builder(
+                builder: (context) {
+                  void handleGesture(PositionedGestureDetails details) async {
+                    final Offset(:dx, :dy) = details.localPosition;
+                    final Size(:width, :height) = context.size!;
+                    Board.state
+                      ..cols = (dx / width * 19).ceil()
+                      ..rows = (dy / height * 19).ceil();
+                  }
+
+                  return GestureDetector(
+                    onPanDown: handleGesture,
+                    onPanUpdate: handleGesture,
+                    child: RefPaint((ref) {
+                      final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                      final (rows, cols) = ref.select(
+                        Board.state,
+                        (data) => (data.rows, data.cols),
+                      );
+                      final cellWidth = width / 19;
+                      final cellHeight = height / 19;
+
+                      if (ref.watch(goMode)) {
+                        final linePaint = Paint()
+                          ..color = const Black(1)
+                          ..strokeWidth = 2
+                          ..strokeCap = .square;
+
+                        Offset intersectionOf(int col, int row) =>
+                            Offset((col + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+
+                        final topLeft = intersectionOf(0, 0);
+                        final bottomRight = intersectionOf(cols - 1, rows - 1);
+
+                        for (var col = 0; col < cols; col++) {
+                          final Offset(:dx) = intersectionOf(col, 0);
+                          canvas.drawLine(
+                            Offset(dx, topLeft.dy),
+                            Offset(dx, bottomRight.dy),
+                            linePaint,
+                          );
+                        }
+                        for (var row = 0; row < rows; row++) {
+                          final Offset(:dy) = intersectionOf(0, row);
+                          canvas.drawLine(
+                            Offset(topLeft.dx, dy),
+                            Offset(bottomRight.dx, dy),
+                            linePaint,
+                          );
+                        }
+                      } else {
+                        final double strokeWidth = math.max(
+                          2,
+                          math.min(cellWidth, cellHeight) * 0.1,
+                        );
+                        final linePaint = Paint()
+                          ..color = const Black(1)
+                          ..strokeWidth = strokeWidth
+                          ..strokeCap = .round;
+
+                        for (var i = 1; i < cols; i++) {
+                          final x = cellWidth * i;
+                          canvas.drawLine(
+                            Offset(x, strokeWidth),
+                            Offset(x, rows * cellHeight - strokeWidth),
+                            linePaint,
+                          );
+                        }
+                        for (var i = 1; i < rows; i++) {
+                          final y = cellHeight * i;
+                          canvas.drawLine(
+                            Offset(strokeWidth, y),
+                            Offset(cols * cellWidth - strokeWidth, y),
+                            linePaint,
+                          );
+                        }
                       }
 
-                      return GestureDetector(
-                        onPanDown: handleGesture,
-                        onPanUpdate: handleGesture,
-                        child: RefPaint((ref) {
-                          final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                          final (rows, cols) = ref.select(
-                            Board.state,
-                            (data) => (data.rows, data.cols),
-                          );
+                      final translucent = Paint()..color = const Black(0.1);
+                      for (var row = 0; row < 19; row++) {
+                        for (var col = 0; col < 19; col++) {
+                          if (row < rows && col < cols) continue;
 
-                          final opaque = Paint()..color = Colors.black;
-                          final translucent = Paint()..color = opaque.color.withValues(alpha: 0.25);
-                          for (var row = 0; row < 19; row++) {
-                            for (var col = 0; col < 19; col++) {
-                              canvas.drawRect(
-                                Rect.fromLTWH(
-                                  width * col / 19,
-                                  height * row / 19,
-                                  width / 19,
-                                  height / 19,
-                                ).deflate(width / 150),
-                                row < rows && col < cols ? opaque : translucent,
-                              );
-                            }
-                          }
-                        }),
-                      );
-                    },
-                  ),
-                ),
+                          canvas.drawRect(
+                            Rect.fromLTWH(
+                              width * col / 19,
+                              height * row / 19,
+                              width / 19,
+                              height / 19,
+                            ).deflate(width / 150),
+                            translucent,
+                          );
+                        }
+                      }
+                    }),
+                  );
+                },
               ),
-              RefBuilder((context) {
-                return Text(
-                  'Get ${ref.select(Board.state, (data) => data.winLength)} in a row to win',
-                );
-              }),
-            ],
+            ),
           ),
-        ),
+          RefBuilder((_) {
+            final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
+            return Text('${cols}x$rows', style: TextStyle(fontWeight: .w600));
+          }),
+        ],
       ),
     );
   }

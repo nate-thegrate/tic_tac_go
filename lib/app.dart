@@ -11,6 +11,11 @@ final goMode = goModeTransition.toggler;
 final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
+const root3over2 = 0.8660254037844386;
+
+class Black extends Color {
+  const Black(double alpha) : super.from(alpha: alpha, red: 0, blue: 0, green: 0);
+}
 
 Future<void> loadShaders() async {
   final paperMarkerFutures = (
@@ -47,6 +52,7 @@ class App extends StatelessWidget {
   static Widget _buildGoReveal(BuildContext context) {
     const revealSoftness = 0.22;
     final progress = ref.watch(goModeTransition);
+
     return ShaderMask(
       blendMode: .dstIn,
       shaderCallback: (Rect bounds) {
@@ -76,16 +82,6 @@ class App extends StatelessWidget {
     );
   }
 
-  static Widget _buildFab(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: playingTransition.toggle,
-      label: Text('playing'),
-      icon: IgnorePointer(
-        child: Checkbox(value: ref.watch(playing), onChanged: (_) {}),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -102,7 +98,6 @@ class App extends StatelessWidget {
             const RefBuilder(_buildGoReveal),
           ],
         ),
-        floatingActionButton: const RefBuilder(_buildFab),
       ),
     );
   }
