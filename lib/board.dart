@@ -284,7 +284,7 @@ class Board extends StatelessWidget {
   const Board({super.key});
 
   static final state = BoardState();
-  static final history = <(int row, int col)>[];
+  static final history = Get.list<(int row, int col)>();
 
   static final turn = Get.it(PlayerMark.x);
   static void switchTurn() {
@@ -307,7 +307,7 @@ class Board extends StatelessWidget {
   static final playerMarkAnimation = Get.vsync();
 
   static late final ui.FragmentProgram markerProgram;
-  static final _markerShaders = <(Color, double grain), ui.FragmentShader>{};
+  static final _markerShaders = <(Size, Color, double grain), ui.FragmentShader>{};
 
   static final int _gameSeed = math.Random().nextInt(0x1000);
   static double _rng(int seed) {
@@ -327,11 +327,7 @@ class Board extends StatelessWidget {
     Paint paint({required double grain, double opacity = 1}) {
       final Size(:width, :height) = size;
       final ink = opacity >= 1 ? color : color.withValues(alpha: color.a * opacity);
-      // Uniforms are read at raster time, so re-apply them on every draw even for
-      // cached shader instances — otherwise a later setFloat on another draw can
-      // clobber this ink (most noticeable on the low-alpha cyan "O" pass).
-      final shader = _markerShaders[(ink, grain)] ??= markerProgram.fragmentShader();
-      shader
+      final shader = _markerShaders[(size, ink, grain)] ??= markerProgram.fragmentShader()
         ..setFloat(0, width)
         ..setFloat(1, height)
         ..setFloat(2, ink.r)
@@ -690,8 +686,9 @@ class MainContent extends StatelessWidget {
                 ..translateByDouble(-dx, -dy, 0, 1);
 
               final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
-              final paint = Paint()
-                ..color = Black(math.max(ref.watch(playingTransition) * 2 - 1, 0));
+              final playingAlpha = math.max(ref.watch(playingTransition) * 2 - 1, 0.0);
+              final hasHistory = ref.select(Board.history, (history) => history.isNotEmpty);
+              final paint = Paint()..color = Black(hasHistory ? playingAlpha : 0.0);
 
               canvas
                 ..save()
@@ -722,33 +719,46 @@ class MainContent extends StatelessWidget {
           child: GestureDetector(
             behavior: .opaque,
             onPanDown: (details) {
-              playing.value = true;
+              switch (MenuPage.current.value) {
+                case .players:
+                  MenuPage.current.value = .boardSize;
+                case .boardSize:
+                  MenuPage.current.value = .rules;
+                case .rules:
+                  playing.value = true;
+              }
             },
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
               final winner = ref.select(Board.state, (data) => data.winner);
+              final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
               final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+
               final TextSpan textSpan;
               if (t < 0.5) {
-                textSpan = const TextSpan(
-                  text: 'Play  ',
-                  children: [
-                    WidgetSpan(
-                      alignment: .middle,
-                      child: SizedBox(
-                        width: 12 * root3over2,
-                        height: 12,
-                        child: RefPaint(_playArrow),
+                textSpan = switch (menuPage) {
+                  .players || .boardSize => const TextSpan(text: 'NEXT'),
+                  .rules => const TextSpan(
+                    text: 'Play  ',
+                    children: [
+                      WidgetSpan(
+                        alignment: .middle,
+                        child: SizedBox(
+                          width: 12 * root3over2,
+                          height: 12,
+                          child: RefPaint(_playArrow),
+                        ),
                       ),
-                    ),
-                  ],
-                );
+                    ],
+                  ),
+                };
               } else {
                 textSpan = TextSpan(
                   text: winner != null ? '$playerText wins!' : ' $playerText\'s move ',
                 );
               }
+
               return Text.rich(
                 textSpan,
                 style: GoogleFonts.permanentMarker(
@@ -825,24 +835,21 @@ class MainContent extends StatelessWidget {
       ],
     );
 
-    return Padding(
-      padding: const .all(padding),
-      child: Column(
-        mainAxisSize: .min,
-        spacing: 16,
-        children: [
-          Flexible(
-            child: _MainContentLayout(
-              menu: Menu(),
-              board: RefAspectRatio(
-                (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
-                child: Board(),
-              ),
+    return Column(
+      mainAxisSize: .min,
+      spacing: 16,
+      children: [
+        Flexible(
+          child: _MainContentLayout(
+            menu: Menu(),
+            board: RefAspectRatio(
+              (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
+              child: Board(),
             ),
           ),
-          bottomBar,
-        ],
-      ),
+        ),
+        bottomBar,
+      ],
     );
   }
 }
@@ -880,123 +887,146 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
   }
 }
 
-enum MenuPage { players, boardSize, rules }
+enum MenuPage {
+  players,
+  boardSize,
+  rules;
 
-class Menu extends StatelessWidget {
+  String get label => switch (this) {
+    players || rules => name,
+    boardSize => 'board size',
+  };
+
+  static final current = Get.it(MenuPage.players);
+}
+
+class Menu extends RefWidget {
   const Menu({super.key});
+
+  static Widget _boardSize(BuildContext context) {
+    void handleGesture(PositionedGestureDetails details) async {
+      final Offset(:dx, :dy) = details.localPosition;
+      final Size(:width, :height) = context.size!;
+      Board.state
+        ..cols = (dx / width * 19).ceil()
+        ..rows = (dy / height * 19).ceil();
+    }
+
+    return GestureDetector(
+      onPanDown: handleGesture,
+      onPanUpdate: handleGesture,
+      child: RefPaint((ref) {
+        final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+        final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
+        final cellWidth = width / 19;
+        final cellHeight = height / 19;
+
+        if (ref.watch(goMode)) {
+          final linePaint = Paint()
+            ..color = const Black(1)
+            ..strokeWidth = 2
+            ..strokeCap = .square;
+
+          Offset intersectionOf(int col, int row) =>
+              Offset((col + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+
+          final topLeft = intersectionOf(0, 0);
+          final bottomRight = intersectionOf(cols - 1, rows - 1);
+
+          for (var col = 0; col < cols; col++) {
+            final Offset(:dx) = intersectionOf(col, 0);
+            canvas.drawLine(Offset(dx, topLeft.dy), Offset(dx, bottomRight.dy), linePaint);
+          }
+          for (var row = 0; row < rows; row++) {
+            final Offset(:dy) = intersectionOf(0, row);
+            canvas.drawLine(Offset(topLeft.dx, dy), Offset(bottomRight.dx, dy), linePaint);
+          }
+        } else {
+          final double strokeWidth = math.max(2, math.min(cellWidth, cellHeight) * 0.1);
+          final linePaint = Paint()
+            ..color = const Black(1)
+            ..strokeWidth = strokeWidth
+            ..strokeCap = .round;
+
+          for (var i = 1; i < cols; i++) {
+            final x = cellWidth * i;
+            canvas.drawLine(
+              Offset(x, strokeWidth),
+              Offset(x, rows * cellHeight - strokeWidth),
+              linePaint,
+            );
+          }
+          for (var i = 1; i < rows; i++) {
+            final y = cellHeight * i;
+            canvas.drawLine(
+              Offset(strokeWidth, y),
+              Offset(cols * cellWidth - strokeWidth, y),
+              linePaint,
+            );
+          }
+        }
+
+        final translucent = Paint()..color = const Black(0.1);
+        for (var row = 0; row < 19; row++) {
+          for (var col = 0; col < 19; col++) {
+            if (row < rows && col < cols) continue;
+
+            canvas.drawRect(
+              Rect.fromLTWH(
+                width * col / 19,
+                height * row / 19,
+                width / 19,
+                height / 19,
+              ).deflate(1.5),
+              translucent,
+            );
+          }
+        }
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentPage = ref.watch(MenuPage.current);
+    final List<Widget> contents = switch (currentPage) {
+      .players => [],
+      .boardSize => [
+        const Flexible(
+          child: AspectRatio(aspectRatio: 1, child: Builder(builder: _boardSize)),
+        ),
+        RefBuilder((_) {
+          final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
+          return Text('${cols}x$rows', style: TextStyle(fontWeight: .w600, fontSize: 16));
+        }),
+      ],
+      .rules => [],
+    };
     return Center(
       child: Column(
         children: [
-          Flexible(
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: Builder(
-                builder: (context) {
-                  void handleGesture(PositionedGestureDetails details) async {
-                    final Offset(:dx, :dy) = details.localPosition;
-                    final Size(:width, :height) = context.size!;
-                    Board.state
-                      ..cols = (dx / width * 19).ceil()
-                      ..rows = (dy / height * 19).ceil();
-                  }
-
-                  return GestureDetector(
-                    onPanDown: handleGesture,
-                    onPanUpdate: handleGesture,
-                    child: RefPaint((ref) {
-                      final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                      final (rows, cols) = ref.select(
-                        Board.state,
-                        (data) => (data.rows, data.cols),
-                      );
-                      final cellWidth = width / 19;
-                      final cellHeight = height / 19;
-
-                      if (ref.watch(goMode)) {
-                        final linePaint = Paint()
-                          ..color = const Black(1)
-                          ..strokeWidth = 2
-                          ..strokeCap = .square;
-
-                        Offset intersectionOf(int col, int row) =>
-                            Offset((col + 0.5) * cellWidth, (row + 0.5) * cellHeight);
-
-                        final topLeft = intersectionOf(0, 0);
-                        final bottomRight = intersectionOf(cols - 1, rows - 1);
-
-                        for (var col = 0; col < cols; col++) {
-                          final Offset(:dx) = intersectionOf(col, 0);
-                          canvas.drawLine(
-                            Offset(dx, topLeft.dy),
-                            Offset(dx, bottomRight.dy),
-                            linePaint,
-                          );
-                        }
-                        for (var row = 0; row < rows; row++) {
-                          final Offset(:dy) = intersectionOf(0, row);
-                          canvas.drawLine(
-                            Offset(topLeft.dx, dy),
-                            Offset(bottomRight.dx, dy),
-                            linePaint,
-                          );
-                        }
-                      } else {
-                        final double strokeWidth = math.max(
-                          2,
-                          math.min(cellWidth, cellHeight) * 0.1,
-                        );
-                        final linePaint = Paint()
-                          ..color = const Black(1)
-                          ..strokeWidth = strokeWidth
-                          ..strokeCap = .round;
-
-                        for (var i = 1; i < cols; i++) {
-                          final x = cellWidth * i;
-                          canvas.drawLine(
-                            Offset(x, strokeWidth),
-                            Offset(x, rows * cellHeight - strokeWidth),
-                            linePaint,
-                          );
-                        }
-                        for (var i = 1; i < rows; i++) {
-                          final y = cellHeight * i;
-                          canvas.drawLine(
-                            Offset(strokeWidth, y),
-                            Offset(cols * cellWidth - strokeWidth, y),
-                            linePaint,
-                          );
-                        }
-                      }
-
-                      final translucent = Paint()..color = const Black(0.1);
-                      for (var row = 0; row < 19; row++) {
-                        for (var col = 0; col < 19; col++) {
-                          if (row < rows && col < cols) continue;
-
-                          canvas.drawRect(
-                            Rect.fromLTWH(
-                              width * col / 19,
-                              height * row / 19,
-                              width / 19,
-                              height / 19,
-                            ).deflate(width / 150),
-                            translucent,
-                          );
-                        }
-                      }
-                    }),
-                  );
-                },
-              ),
-            ),
+          Row(
+            children: [
+              for (final page in MenuPage.values)
+                Expanded(
+                  child: GestureDetector(
+                    onPanDown: (details) {
+                      MenuPage.current.value = page;
+                    },
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: Black(page == currentPage ? 0 : 0.1)),
+                      child: Padding(
+                        padding: const .symmetric(vertical: 5.0),
+                        child: Center(
+                          child: Text(page.label, style: GoogleFonts.permanentMarker(fontSize: 18)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          RefBuilder((_) {
-            final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
-            return Text('${cols}x$rows', style: TextStyle(fontWeight: .w600));
-          }),
+          ...contents,
         ],
       ),
     );

@@ -13,6 +13,26 @@ final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 const root3over2 = 0.8660254037844386;
 
+enum Difficulty {
+  easy,
+  hard,
+  brutal;
+
+  /// The user's chosen difficulty.
+  ///
+  /// `null` if it's a 2-player game.
+  static final current = Get.it<Difficulty?>(null);
+}
+
+enum Ruleset {
+  gomoku,
+  renju,
+  swap2,
+  connect6;
+
+  static final current = Get.it(gomoku);
+}
+
 class Black extends Color {
   const Black(double alpha) : super.from(alpha: alpha, red: 0, blue: 0, green: 0);
 }
