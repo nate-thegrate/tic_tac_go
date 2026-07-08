@@ -29,6 +29,10 @@ Get-CimInstance Win32_Process -Filter "Name='dart.exe'" | ForEach-Object {
 
 Connect to the app if it was found; if not, use `flutter run -d windows` to start it.
 
+# Dart MCP
+
+When using the Dart MCP `analyze_files` tool, analyze the entire project instead of using `paths`.
+
 # Dart coding
 
 ## Accessing files

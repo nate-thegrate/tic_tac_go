@@ -44,10 +44,10 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   /// The number of items in a row required to win.
   int get winLength => math.min(math.min(rows, cols), 5);
 
-  static final _winningRunCache = Expando<List<({int row, int col})>>();
+  static final _winningRunCache = Expando<List<(int row, int col)>>();
 
   /// The first winning run found, if any.
-  List<({int row, int col})>? get winningRun {
+  List<(int row, int col)>? get winningRun {
     if (_winningRunCache[this] case final cached?) {
       return cached.isEmpty ? null : cached;
     }
@@ -79,7 +79,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
           }
           if (won) {
             return _winningRunCache[this] = [
-              for (var i = 0; i < needed; i++) (row: row + i * dRow, col: col + i * dCol),
+              for (var i = 0; i < needed; i++) (row + i * dRow, col + i * dCol),
             ];
           }
         }
@@ -92,7 +92,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   /// If one of the players has won (by having a number of items in a row, straight or diagonally,
   /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
   PlayerMark? get winner => switch (winningRun?.firstOrNull) {
-    (:final col, :final row) => _list[row][col],
+    (final row, final col) => _list[row][col],
     null => null,
   };
 
@@ -300,8 +300,15 @@ class Board extends StatelessWidget {
   const Board({super.key});
 
   static final state = BoardState();
+  static final history = <(int row, int col)>[];
 
   static final turn = Get.it(PlayerMark.x);
+  void switchTurn() {
+    turn.value = switch (turn.value) {
+      .x => .o,
+      .o => .x,
+    };
+  }
 
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();
@@ -362,6 +369,14 @@ class Board extends StatelessWidget {
   static void paint(PaintRef ref) {
     final board = ref.watch(state);
     final t = ref.watch(playerMarkAnimation);
+    final isGoMode = ref.watch(goMode);
+    final shouldSkipPaint = switch (ref.watch(goModeTransition.status)) {
+      .completed => !isGoMode,
+      .dismissed => isGoMode,
+      .forward || .reverse => false,
+    };
+    if (shouldSkipPaint) return;
+
     final PaintRef(:canvas, :size) = ref;
     final Size(:width, :height) = size;
     final BoardData(:cols, :rows) = board;
@@ -370,7 +385,7 @@ class Board extends StatelessWidget {
     final cellHeight = height / rows;
     final minCell = math.min(cellWidth, cellHeight);
 
-    if (ref.watch(goMode)) {
+    if (isGoMode) {
       final linePaint = Paint()
         ..color = const Color(0xFF1A1208)
         ..strokeWidth = math.max(2.0, minCell * 0.04)
@@ -394,7 +409,7 @@ class Board extends StatelessWidget {
       final stoneRadius = minCell * 0.5;
       final dropHeight = minCell * 1.8;
 
-      StoneData layoutStone(int row, int col, PlayerMark mark, double progress) {
+      StoneData stoneData(int row, int col, PlayerMark mark, double progress) {
         progress = progress.clamp(0.0, 1.0);
         const impactAt = 0.68;
 
@@ -456,17 +471,17 @@ class Board extends StatelessWidget {
           final mark = board[row][col];
           if (mark == null) continue;
           if (currentMark == (row, col) && t < 1) {
-            fallingStone = layoutStone(row, col, mark, t);
+            fallingStone = stoneData(row, col, mark, t);
             continue;
           }
-          stones.add(layoutStone(row, col, mark, 1));
+          stones.add(stoneData(row, col, mark, 1));
         }
       }
       if (fallingStone case final stone?) {
         stones.add(stone);
       }
 
-      bool isWinning(StoneData stone) => winningCells.contains((row: stone.row, col: stone.col));
+      bool isWinning(StoneData stone) => winningCells.contains((stone.row, stone.col));
       bool notWinning(StoneData stone) => !isWinning(stone);
 
       // Layer order: shadow / glow drawn underneath stones, winning stones drawn on top
@@ -565,11 +580,12 @@ class Board extends StatelessWidget {
       }
 
       if (board.winningRun case final cells?) {
-        final List(:first, :last) = cells;
-        final start = Offset((first.col + 0.5) * cellWidth, (first.row + 0.5) * cellHeight);
-        final end = Offset((last.col + 0.5) * cellWidth, (last.row + 0.5) * cellHeight);
+        final (firstRow, firstCol) = cells.first;
+        final (lastRow, lastCol) = cells.last;
+        final start = Offset((firstCol + 0.5) * cellWidth, (firstRow + 0.5) * cellHeight);
+        final end = Offset((lastCol + 0.5) * cellWidth, (lastRow + 0.5) * cellHeight);
         final delta = end - start;
-        const padFactor = 0.4; // TODO: should be 0.5 if diagonal, 0.4 otherwise.
+        final padFactor = delta.dx != 0 && delta.dy != 0 ? 0.52 : 0.4;
         final pad = delta / delta.distance * minCell * padFactor;
 
         drawMarker(size: size, strokeWidth: minCell * 0.05, (paint) {
@@ -595,16 +611,13 @@ class Board extends StatelessWidget {
             final down = (details.localPosition.dy / height * rows).floor();
             if (state.value[down][across] != null) return;
 
-            currentMark = (down, across);
+            history.add(currentMark = (down, across));
             state.update(down, across, turn.value);
             playerMarkAnimation.duration = goMode.value
-                ? const Duration(milliseconds: 350)
+                ? const Duration(milliseconds: 300)
                 : const Duration(milliseconds: 225);
             await playerMarkAnimation.forward(from: 0);
-            turn.value = switch (turn.value) {
-              .x => .o,
-              .o => .x,
-            };
+            switchTurn();
           },
           child: const RefPaint(paint),
         );
@@ -612,10 +625,10 @@ class Board extends StatelessWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      padding: .all(12),
       child: Column(
         mainAxisSize: .min,
-        spacing: 6,
+        spacing: 16,
         children: [
           Flexible(
             child: RefAspectRatio(
@@ -623,15 +636,168 @@ class Board extends StatelessWidget {
               child: board,
             ),
           ),
-          RefBuilder((context) {
-            final player = ref.watch(turn);
-            final winner = ref.select(state, (data) => data.winner);
-            final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
-            return Text(
-              winner != null ? '$playerText wins!' : ' $playerText\'s move ',
-              style: GoogleFonts.permanentMarker(fontSize: 24),
-            );
-          }),
+          Row(
+            mainAxisSize: .min,
+            mainAxisAlignment: .center,
+            children: [
+              GestureDetector(
+                behavior: .opaque,
+                onPanDown: (details) {
+                  playing.value = false;
+                },
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: RefPaint((ref) {
+                    final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                    const strokeWidth = 5.0;
+                    const xPad = 16.0;
+                    const yPad = 12.0;
+
+                    final strokePaint = Paint()
+                      ..style = .stroke
+                      ..strokeWidth = strokeWidth
+                      ..strokeCap = .round;
+                    canvas.drawPath(
+                      Path()
+                        ..moveTo(width - xPad, yPad)
+                        ..lineTo(xPad, height / 2)
+                        ..lineTo(width - xPad, height - yPad),
+                      strokePaint,
+                    );
+                  }),
+                ),
+              ),
+              GestureDetector(
+                behavior: .opaque,
+                onPanDown: (details) {
+                  if (history.isEmpty) return;
+                  final (row, col) = history.removeLast();
+                  state.update(row, col, null);
+                  switchTurn();
+                },
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: RefPaint((ref) {
+                    final PaintRef(:canvas, :size) = ref;
+                    const strokeWidth = 5.0;
+                    const arrowWidth = 12.0;
+
+                    final Offset(:dx, :dy) = size.center(Offset.zero);
+                    final angle = 5 * math.pi / 6;
+                    final transform = Matrix4.identity()
+                      ..translateByDouble(dx, dy, 0, 1)
+                      ..rotateZ(angle)
+                      ..translateByDouble(-dx, -dy, 0, 1);
+
+                    const root3over2 = 0.8660254037844386;
+
+                    final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
+                    final strokePaint = Paint()
+                      ..style = .stroke
+                      ..strokeWidth = strokeWidth
+                      ..strokeCap = .round;
+                    canvas
+                      ..save()
+                      ..transform(transform.storage)
+                      ..drawArc(arcRect, 0, -math.pi * 3 / 2, false, strokePaint)
+                      ..drawPath(
+                        Path()
+                          ..moveTo(size.width / 2, size.height - arrowWidth / 2)
+                          ..relativeLineTo(0, -arrowWidth)
+                          ..relativeLineTo(arrowWidth * root3over2, arrowWidth / 2)
+                          ..close(),
+                        Paint(),
+                      )
+                      ..restore();
+                  }),
+                ),
+              ),
+              Expanded(
+                child: RefBuilder((context) {
+                  final player = ref.watch(turn);
+                  final winner = ref.select(state, (data) => data.winner);
+                  final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+                  return Text(
+                    winner != null ? '$playerText wins!' : ' $playerText\'s move ',
+                    style: GoogleFonts.permanentMarker(fontSize: 24),
+                    textAlign: .center,
+                  );
+                }),
+              ),
+              const SizedBox(width: 48),
+              GestureDetector(
+                onPanDown: (details) {
+                  goMode.toggle();
+                },
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: RefPaint(
+                    (ref) {
+                      ref.canvas.drawRect(
+                        Offset.zero & ref.size,
+                        Paint()
+                          ..color = ref.watch(goMode)
+                              ? const Color(0x60FFFFFF)
+                              : const Color(0xC0F5C782),
+                      );
+                    },
+                    child: Padding(
+                      padding: const .all(3),
+                      child: RefPaint((ref) {
+                        final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                        if (ref.watch(goMode)) {
+                          final paint = Paint()
+                            ..style = .stroke
+                            ..strokeWidth = 3
+                            ..strokeCap = .round;
+                          const pad = 4.0;
+                          canvas
+                            ..drawLine(
+                              Offset(width / 3, pad),
+                              Offset(width / 3, height - pad),
+                              paint,
+                            )
+                            ..drawLine(
+                              Offset(width * 2 / 3, pad),
+                              Offset(width * 2 / 3, height - pad),
+                              paint,
+                            )
+                            ..drawLine(
+                              Offset(pad, height / 3),
+                              Offset(width - pad, height / 3),
+                              paint,
+                            )
+                            ..drawLine(
+                              Offset(pad, height * 2 / 3),
+                              Offset(width - pad, height * 2 / 3),
+                              paint,
+                            );
+                        } else {
+                          canvas
+                            ..drawRect(
+                              Rect.fromLTWH(width / 4, height / 4, width / 2, height / 2),
+                              Paint()
+                                ..style = .stroke
+                                ..strokeWidth = 3,
+                            )
+                            ..drawCircle(
+                              Offset(width / 4, height / 4),
+                              width / 4,
+                              Paint()..color = const Color(0xFF101010),
+                            )
+                            ..drawCircle(
+                              Offset(width * 3 / 4, height * 3 / 4),
+                              width / 4,
+                              Paint()..color = const Color(0xFFFFFAED),
+                            );
+                        }
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -686,13 +852,11 @@ class Menu extends StatelessWidget {
                   child: Builder(
                     builder: (context) {
                       void handleGesture(PositionedGestureDetails details) async {
-                        final size = context.size;
-                        if (size == null || size.isEmpty) return;
-
-                        final Size(:width, :height) = size;
+                        final Offset(:dx, :dy) = details.localPosition;
+                        final Size(:width, :height) = context.size!;
                         Board.state
-                          ..cols = (details.localPosition.dx / width * 19).ceil()
-                          ..rows = (details.localPosition.dy / height * 19).ceil();
+                          ..cols = (dx / width * 19).ceil()
+                          ..rows = (dy / height * 19).ceil();
                       }
 
                       return GestureDetector(

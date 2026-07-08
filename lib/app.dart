@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/board.dart';
 
-final playing = Get.compute((ref) => ref.watch(playingTransition.status).isForwardOrCompleted);
+final playing = playingTransition.toggler;
 final playingTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 
-final goMode = Get.compute((ref) => ref.watch(goModeTransition.status).isForwardOrCompleted);
+final goMode = goModeTransition.toggler;
 final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
@@ -77,25 +77,12 @@ class App extends StatelessWidget {
   }
 
   static Widget _buildFab(BuildContext context) {
-    return Row(
-      mainAxisSize: .min,
-      spacing: 16,
-      children: [
-        FilledButton.tonalIcon(
-          onPressed: playingTransition.toggle,
-          label: Text('playing'),
-          icon: IgnorePointer(
-            child: Checkbox(value: ref.watch(playing), onChanged: (_) {}),
-          ),
-        ),
-        FilledButton.tonalIcon(
-          onPressed: goModeTransition.toggle,
-          label: Text('Go mode'),
-          icon: IgnorePointer(
-            child: Checkbox(value: ref.watch(goMode), onChanged: (_) {}),
-          ),
-        ),
-      ],
+    return FilledButton.tonalIcon(
+      onPressed: playingTransition.toggle,
+      label: Text('playing'),
+      icon: IgnorePointer(
+        child: Checkbox(value: ref.watch(playing), onChanged: (_) {}),
+      ),
     );
   }
 
