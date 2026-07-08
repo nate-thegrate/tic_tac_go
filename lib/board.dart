@@ -276,14 +276,25 @@ class BoardTextures extends StatelessWidget {
   }
 }
 
-typedef StoneData = ({
-  int row,
-  int col,
-  PlayerMark mark,
-  Rect stoneRect,
-  Rect shadowRect,
-  double elevation,
-});
+class StoneData {
+  StoneData(
+    this.row,
+    this.col,
+    this.mark, {
+    required Offset center,
+    required double radius,
+    required double height,
+  }) : rect = .fromCircle(center: center.translate(0, -height), radius: radius),
+       shadowRect = .fromCircle(center: center, radius: radius),
+       elevation = 2.0 + height * 0.1;
+
+  final int row;
+  final int col;
+  final PlayerMark mark;
+  final Rect rect;
+  final Rect shadowRect;
+  final double elevation;
+}
 
 class Board extends StatelessWidget {
   const Board({super.key});
@@ -382,39 +393,32 @@ class Board extends StatelessWidget {
 
       final stoneRadius = minCell * 0.5;
       final dropHeight = minCell * 1.8;
-      const impactAt = 0.68;
 
-      double heightAboveBoard(double progress) {
+      StoneData layoutStone(int row, int col, PlayerMark mark, double progress) {
         progress = progress.clamp(0.0, 1.0);
+        const impactAt = 0.68;
+
+        final double height;
         if (progress <= impactAt) {
-          return dropHeight * (1 - Curves.easeInQuad.transform(progress / impactAt));
+          final impactProgress = progress / impactAt;
+          height = dropHeight * (1 - impactProgress * impactProgress);
+        } else {
+          final bounceProgress = (progress - impactAt) / (1 - impactAt);
+          height = dropHeight * 0.25 * bounceProgress * (1 - bounceProgress);
         }
-        final bounceT = (progress - impactAt) / (1 - impactAt);
-        final bounceHeight = dropHeight * 0.1;
-        return bounceHeight * math.sin(bounceT * math.pi) * math.pow(1 - bounceT, 1.25);
-      }
 
-      final winningCells = {...?board.winningRun};
-
-      StoneData? layoutStone(int row, int col, PlayerMark mark, double progress) {
-        if (progress <= 0) return null;
-
-        final restCenter = intersectionOf(col, row);
-        final height = heightAboveBoard(progress);
-        final center = restCenter.translate(0, -height);
-
-        return (
-          row: row,
-          col: col,
-          mark: mark,
-          stoneRect: .fromCircle(center: center, radius: stoneRadius),
-          shadowRect: .fromCircle(center: restCenter, radius: stoneRadius),
-          elevation: 2.0 + height * 0.1,
+        return StoneData(
+          row,
+          col,
+          mark,
+          center: intersectionOf(col, row),
+          height: height,
+          radius: stoneRadius,
         );
       }
 
       void drawStone(StoneData stone) {
-        final (:mark, :stoneRect, row: _, col: _, shadowRect: _, elevation: _) = stone;
+        final StoneData(:mark, rect: stoneRect) = stone;
         final isBlack = mark == .x;
         final baseColor = isBlack ? const Color(0xFF101010) : const Color(0xFFE0DCD1);
         canvas.drawOval(stoneRect, Paint()..color = baseColor);
@@ -444,43 +448,35 @@ class Board extends StatelessWidget {
           ..restore();
       }
 
+      final winningCells = {...?board.winningRun};
       final stones = <StoneData>[];
-      ({int row, int col, PlayerMark mark})? fallingStone;
+      StoneData? fallingStone;
       for (var row = 0; row < rows; row++) {
         for (var col = 0; col < cols; col++) {
           final mark = board[row][col];
           if (mark == null) continue;
           if (currentMark == (row, col) && t < 1) {
-            fallingStone = (row: row, col: col, mark: mark);
+            fallingStone = layoutStone(row, col, mark, t);
             continue;
           }
-          if (layoutStone(row, col, mark, 1) case final stone?) stones.add(stone);
+          stones.add(layoutStone(row, col, mark, 1));
         }
       }
-      if (fallingStone case (:final row, :final col, :final mark)?) {
-        if (layoutStone(row, col, mark, t) case final stone?) stones.add(stone);
+      if (fallingStone case final stone?) {
+        stones.add(stone);
       }
 
-      final normalStones = <StoneData>[];
-      final winningStones = <StoneData>[];
-      for (final stone in stones) {
-        if (winningCells.contains((row: stone.row, col: stone.col))) {
-          winningStones.add(stone);
-        } else {
-          normalStones.add(stone);
-        }
-      }
+      bool isWinning(StoneData stone) => winningCells.contains((row: stone.row, col: stone.col));
+      bool notWinning(StoneData stone) => !isWinning(stone);
 
-      for (final (:shadowRect, :elevation, mark: _, stoneRect: _, row: _, col: _) in stones) {
+      // Layer order: shadow / glow drawn underneath stones, winning stones drawn on top
+      for (final StoneData(:shadowRect, :elevation) in stones.where(notWinning)) {
         canvas.drawShadow(Path()..addOval(shadowRect), Colors.black, elevation, true);
       }
-      for (final stone in normalStones) {
-        drawStone(stone);
-      }
-      for (final stone in winningStones) {
-        final stoneRect = stone.stoneRect;
+      stones.where(notWinning).forEach(drawStone);
+      for (final StoneData(rect: stoneRect, :mark) in stones.where(isWinning)) {
         final Rect(:center) = stoneRect;
-        final winnerGlow = stone.mark.winnerGlow;
+        final winnerGlow = mark.winnerGlow;
         final glowRadius = stoneRect.shortestSide / 2 * 1.5;
         canvas.drawCircle(
           center,
@@ -495,9 +491,7 @@ class Board extends StatelessWidget {
             ),
         );
       }
-      for (final stone in winningStones) {
-        drawStone(stone);
-      }
+      stones.where(isWinning).forEach(drawStone);
     } else {
       final markWidth = minCell * 0.15;
       final gridInset = minCell * 0.05;
@@ -575,9 +569,10 @@ class Board extends StatelessWidget {
         final start = Offset((first.col + 0.5) * cellWidth, (first.row + 0.5) * cellHeight);
         final end = Offset((last.col + 0.5) * cellWidth, (last.row + 0.5) * cellHeight);
         final delta = end - start;
-        final pad = delta / delta.distance * (minCell / 2);
+        const padFactor = 0.4; // TODO: should be 0.5 if diagonal, 0.4 otherwise.
+        final pad = delta / delta.distance * minCell * padFactor;
 
-        drawMarker(size: size, strokeWidth: minCell * 0.075, (paint) {
+        drawMarker(size: size, strokeWidth: minCell * 0.05, (paint) {
           canvas.drawLine(start - pad, end + pad, paint);
         });
       }
