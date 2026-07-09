@@ -35,9 +35,11 @@ When using the Dart MCP `analyze_files` tool, analyze the entire project instead
 
 # Dart coding
 
-## Accessing files
+`.dart` files in this repo can be found in the `lib/` directory or one of its subdirectories.
 
-Every `.dart` file can be found in the `lib/` directory or one of its subdirectories.
+When in doubt, read more.
+- Seek out a thorough understanding of this codebase and its dependencies before making changes.
+- Assume that your previous changes may have been tweaked or refactored since you last saw them, and re-read before making further edits.
 
 ## Coding style
 
@@ -77,3 +79,7 @@ final (paper, marker) = await (
 paperShader = paper.fragmentShader();
 markerShader = marker.fragmentShader();
 ```
+
+## get_hooked package
+
+This project uses **get_hooked** for reactive state management; it's declared as a local path dependency in `pubspec.yaml`.

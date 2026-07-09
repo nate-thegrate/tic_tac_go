@@ -5,8 +5,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
+import 'package:tic_tac_go/src/menu.dart';
 
 enum PlayerMark {
   x,
@@ -45,6 +47,8 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   static final _winningRunCache = Expando<List<(int row, int col)>>();
 
   /// The first winning run found, if any.
+  ///
+  /// Returns `[(-1, -1)]` if the game is a draw.
   List<(int row, int col)>? get winningRun {
     if (_winningRunCache[this] case final cached?) {
       return cached.isEmpty ? null : cached;
@@ -83,6 +87,10 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
         }
       }
     }
+    if (isFull) {
+      return _winningRunCache[this] = [(-1, -1)];
+    }
+
     _winningRunCache[this] = [];
     return null;
   }
@@ -90,9 +98,22 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   /// If one of the players has won (by having a number of items in a row, straight or diagonally,
   /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
   PlayerMark? get winner => switch (winningRun?.firstOrNull) {
+    (-1, -1) => null,
     (final row, final col) => _list[row][col],
     null => null,
   };
+
+  bool get isFull {
+    for (final row in _list) {
+      for (final cell in row) {
+        if (cell == null) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Whether the game has a winner or the board is completely filled.
+  bool get isGameOver => winner != null || isFull;
 
   @protected
   @redeclare
@@ -167,9 +188,30 @@ class StoneData {
     required Offset center,
     required double radius,
     required double height,
-  }) : rect = .fromCircle(center: center.translate(0, -height), radius: radius),
+    required double maxHeight,
+  }) : rect = .fromCircle(
+         center: center.translate(0, -height),
+         radius: radius * scaleForHeight(height, maxHeight),
+       ),
        shadowRect = .fromCircle(center: center, radius: radius),
-       elevation = 2.0 + height * 0.1;
+       elevation = 2.0 + height * 0.1,
+       opacity = opacityForHeight(height, maxHeight);
+
+  /// How far the stone is from the board, as a 0–1 fraction of [maxHeight].
+  static double heightFactor(double height, double maxHeight) {
+    if (maxHeight <= 0) return 0;
+    return (height / maxHeight).clamp(0.0, 1.0);
+  }
+
+  /// Stones higher above the board read as closer to the camera.
+  static double scaleForHeight(double height, double maxHeight) {
+    return 1.0 + heightFactor(height, maxHeight) * 0.15;
+  }
+
+  /// Soft stand-in for depth-of-field: higher stones are slightly more translucent.
+  static double opacityForHeight(double height, double maxHeight) {
+    return 1.0 - heightFactor(height, maxHeight) * 0.22;
+  }
 
   final int row;
   final int col;
@@ -177,6 +219,7 @@ class StoneData {
   final Rect rect;
   final Rect shadowRect;
   final double elevation;
+  final double opacity;
 }
 
 class Board extends StatelessWidget {
@@ -200,11 +243,24 @@ class Board extends StatelessWidget {
     switchTurn();
   }
 
-  static void reset() async {
+  /// Clears the board and starts a new game without leaving play mode.
+  static void playAgain([_]) {
+    GameEnd.opacity.reset();
+    state.clear();
+    history.clear();
+    turn.value = .x;
+    currentMark = null;
+  }
+
+  /// Leaves play mode and returns to the setup menu.
+  static void reset([_]) async {
+    GameEnd.opacity.reset();
+    MenuPage.current.value = .players;
     await playingTransition.reverse();
     state.clear();
     history.clear();
     turn.value = .x;
+    currentMark = null;
   }
 
   static (int, int)? currentMark;
@@ -269,6 +325,7 @@ class Board extends StatelessWidget {
       .forward || .reverse => false,
     };
     if (shouldSkipPaint) return;
+    if (playerMarkAnimation.isActive) ref.setWillChangeHint();
 
     final PaintRef(:canvas, :size) = ref;
     final Size(:width, :height) = size;
@@ -309,10 +366,10 @@ class Board extends StatelessWidget {
         final double height;
         if (progress <= impactAt) {
           final impactProgress = progress / impactAt;
-          height = dropHeight * (1 - impactProgress * impactProgress);
+          height = dropHeight * (1 - (impactProgress * impactProgress * 2 + impactProgress) / 3);
         } else {
           final bounceProgress = (progress - impactAt) / (1 - impactAt);
-          height = dropHeight * 0.25 * bounceProgress * (1 - bounceProgress);
+          height = dropHeight * 0.16 * bounceProgress * (1 - bounceProgress);
         }
 
         return StoneData(
@@ -321,14 +378,17 @@ class Board extends StatelessWidget {
           mark,
           center: intersectionOf(col, row),
           height: height,
+          maxHeight: dropHeight,
           radius: stoneRadius,
         );
       }
 
       void drawStone(StoneData stone) {
-        final StoneData(:mark, rect: stoneRect) = stone;
+        final StoneData(:mark, rect: stoneRect, :opacity) = stone;
         final isBlack = mark == .x;
-        final baseColor = isBlack ? const Color(0xFF101010) : const Color(0xFFE0DCD1);
+        final baseColor = (isBlack ? const Color(0xFF101010) : const Color(0xFFE0DCD1)).withValues(
+          alpha: opacity,
+        );
         canvas.drawOval(stoneRect, Paint()..color = baseColor);
 
         final Rect(:center, :width, :height) = stoneRect;
@@ -340,6 +400,7 @@ class Board extends StatelessWidget {
           center.dy - radiusY * 0.7,
         );
         final highlightRadius = math.min(radiusX, radiusY) * 0.8;
+        final highlightPeak = (isBlack ? 0x48 : 0xFF) / 255.0 * opacity;
         canvas
           ..save()
           ..clipRRect(RRect.fromRectAndRadius(stoneRect, .circular(0x100000)))
@@ -349,7 +410,7 @@ class Board extends StatelessWidget {
             highlightRadius,
             Paint()
               ..shader = ui.Gradient.radial(highlightCenter, highlightRadius, [
-                if (isBlack) const Color(0x48FFFAED) else const Color(0xFFFFFAED),
+                Color.from(alpha: highlightPeak, red: 1, green: 250 / 255, blue: 237 / 255),
                 const Color(0x00FFFAED),
               ]),
           )
@@ -382,10 +443,10 @@ class Board extends StatelessWidget {
         canvas.drawShadow(Path()..addOval(shadowRect), Colors.black, elevation, true);
       }
       stones.where(notWinning).forEach(drawStone);
-      for (final StoneData(rect: stoneRect, :mark) in stones.where(isWinning)) {
+      for (final StoneData(rect: stoneRect, :mark, :opacity) in stones.where(isWinning)) {
         final Rect(:center) = stoneRect;
-        final winnerGlow = mark.winnerGlow;
-        final glowRadius = stoneRect.shortestSide / 2 * 1.5;
+        final winnerGlow = mark.winnerGlow.withValues(alpha: mark.winnerGlow.a * opacity);
+        final glowRadius = stoneRect.shortestSide * 2 / 3;
         canvas.drawCircle(
           center,
           glowRadius,
@@ -477,17 +538,19 @@ class Board extends StatelessWidget {
         }
       }
 
-      if (board.winningRun case final cells?) {
+      if (board.winningRun case final cells? when !cells.first.$1.isNegative) {
         final (firstRow, firstCol) = cells.first;
         final (lastRow, lastCol) = cells.last;
-        final start = Offset((firstCol + 0.5) * cellWidth, (firstRow + 0.5) * cellHeight);
-        final end = Offset((lastCol + 0.5) * cellWidth, (lastRow + 0.5) * cellHeight);
+        var start = Offset((firstCol + 0.5) * cellWidth, (firstRow + 0.5) * cellHeight);
+        var end = Offset((lastCol + 0.5) * cellWidth, (lastRow + 0.5) * cellHeight);
         final delta = end - start;
         final padFactor = delta.dx != 0 && delta.dy != 0 ? 0.52 : 0.4;
         final pad = delta / delta.distance * minCell * padFactor;
+        start -= pad;
+        end += pad;
 
         drawMarker(size: size, strokeWidth: minCell * 0.05, (paint) {
-          canvas.drawLine(start - pad, end + pad, paint);
+          canvas.drawLine(start, Offset.lerp(start, end, t)!, paint);
         });
       }
     }
@@ -495,27 +558,225 @@ class Board extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: .opaque,
-      onPanDown: (details) async {
-        if (playerMarkAnimation.isActive || state.value.winner != null) return;
+    // Placement sits under the end-game options so those buttons don't also
+    // register a mark at the same coordinates.
+    return Stack(
+      children: [
+        GestureDetector(
+          behavior: .opaque,
+          onPanDown: (details) async {
+            if (playerMarkAnimation.isActive) return;
+            if (state.value.isGameOver) {
+              GameEnd.opacity.jumpTo(1);
+              return;
+            }
 
-        final Size(:width, :height) = context.size!;
-        final BoardState(:cols, :rows) = state;
+            final box = context.findRenderObject()! as RenderBox;
+            final Size(:width, :height) = box.size;
+            final BoardState(:cols, :rows) = state;
+            final Offset(:dx, :dy) = details.localPosition;
 
-        final across = (details.localPosition.dx / width * cols).floor();
-        final down = (details.localPosition.dy / height * rows).floor();
-        if (state.value[down][across] != null) return;
+            final down = (dy / height * rows).floor();
+            final across = (dx / width * cols).floor();
+            if (down < 0 || down >= rows || across < 0 || across >= cols) return;
+            if (state.value[down][across] != null) return;
 
-        history.add(currentMark = (down, across));
-        state.update(down, across, turn.value);
-        playerMarkAnimation.duration = goMode.value
-            ? const Duration(milliseconds: 300)
-            : const Duration(milliseconds: 225);
-        await playerMarkAnimation.forward(from: 0);
-        switchTurn();
-      },
-      child: const RefPaint(paint),
+            state.update(down, across, turn.value);
+            final mark = currentMark = (down, across);
+            final gameOver = state.value.isGameOver;
+            gameOver ? history.clear() : history.add(mark);
+            playerMarkAnimation.duration = goMode.value
+                ? const Duration(milliseconds: 325)
+                : const Duration(milliseconds: 225);
+            await playerMarkAnimation.forward(from: 0);
+
+            if (gameOver) {
+              await Future<void>.delayed(const Duration(milliseconds: 1500));
+              if (state.value.isGameOver && GameEnd.opacity.value == 0) {
+                await GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 350));
+              }
+            } else {
+              switchTurn();
+            }
+          },
+          child: RefOpacity((ref) => 1 - ref.watch(GameEnd.opacity) / 2, child: RefPaint(paint)),
+        ),
+        const Positioned.fill(child: GameEnd()),
+      ],
     );
   }
+}
+
+class GameEnd extends RefWidget {
+  const GameEnd({super.key});
+
+  static final opacity = Get.vsyncValue(0.0, curve: Curves.easeOutSine);
+
+  @override
+  Widget build(BuildContext context) {
+    if (ref.select(Board.state, (data) => !data.isGameOver)) {
+      return const SizedBox.shrink();
+    }
+
+    return FittedBox(
+      fit: .scaleDown,
+      child: RefPointer(
+        (ref) => ref.watch(opacity) > 0.5,
+        child: RefOpacity(
+          (ref) => ref.watch(opacity),
+          child: const Column(
+            mainAxisSize: .min,
+            children: [
+              _EndGameOption(label: 'Play again', onSelect: Board.playAgain),
+              _EndGameOption(label: 'Back to menu', onSelect: Board.reset),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EndGameOption extends StatelessWidget {
+  const _EndGameOption({required this.label, required this.onSelect});
+
+  final String label;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: .opaque,
+      onPanDown: (_) => onSelect(),
+      child: Padding(
+        padding: const .all(32),
+        child: _OutlinedText(label: label.toUpperCase()),
+      ),
+    );
+  }
+}
+
+class _OutlinedText extends LeafRenderObjectWidget {
+  const _OutlinedText({required this.label});
+
+  final String label;
+
+  @override
+  _RenderOutlinedText createRenderObject(BuildContext context) {
+    return _RenderOutlinedText(label);
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderOutlinedText renderObject) {
+    renderObject.label = label;
+  }
+}
+
+class _RenderOutlinedText extends RenderBox {
+  _RenderOutlinedText(this._label) {
+    _rebuildPainters();
+  }
+
+  static const _fontSize = 48.0;
+  static const _strokeWidth = 6.0;
+
+  /// Half the stroke extends outside the text metrics; pad so it isn't clipped.
+  static const _strokePad = _strokeWidth / 2;
+
+  String get label => _label;
+  String _label;
+  set label(String value) {
+    if (_label == value) return;
+    _label = value;
+    _rebuildPainters();
+    markNeedsLayout();
+  }
+
+  late TextPainter _stroke;
+  late TextPainter _fill;
+
+  void _rebuildPainters() {
+    _stroke = TextPainter(
+      text: TextSpan(
+        text: _label,
+        style: GoogleFonts.permanentMarker(
+          fontSize: _fontSize,
+          foreground: Paint()
+            ..style = .stroke
+            ..strokeWidth = _strokeWidth
+            ..strokeJoin = .round
+            ..color = Colors.white,
+          shadows: const [
+            Shadow(blurRadius: 12),
+            Shadow(blurRadius: 12),
+            Shadow(blurRadius: 12),
+            Shadow(blurRadius: 12),
+            Shadow(blurRadius: 12),
+            Shadow(blurRadius: 12),
+          ],
+        ),
+      ),
+      textAlign: .center,
+      textDirection: .ltr,
+    );
+    _fill = TextPainter(
+      text: TextSpan(
+        text: _label,
+        style: GoogleFonts.permanentMarker(fontSize: _fontSize, color: Colors.black),
+      ),
+      textAlign: .center,
+      textDirection: .ltr,
+    );
+  }
+
+  double _maxTextWidthFor(double maxWidth) {
+    if (!maxWidth.isFinite) return double.infinity;
+    return math.max(0.0, maxWidth - _strokePad * 2);
+  }
+
+  Size _layoutPainters({double maxWidth = double.infinity}) {
+    final textMaxWidth = _maxTextWidthFor(maxWidth);
+    _stroke.layout(maxWidth: textMaxWidth);
+    _fill.layout(maxWidth: textMaxWidth);
+    return Size(_fill.width + _strokePad * 2, _fill.height + _strokePad * 2);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _layoutPainters().width;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _layoutPainters().width;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _layoutPainters(maxWidth: width).height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _layoutPainters(maxWidth: width).height;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    // Ephemeral painters so dry layout has no lasting side effects.
+    final textMaxWidth = _maxTextWidthFor(constraints.maxWidth);
+    final fill = TextPainter(text: _fill.text, textAlign: .center, textDirection: .ltr)
+      ..layout(maxWidth: textMaxWidth);
+    return constraints.constrain(Size(fill.width + _strokePad * 2, fill.height + _strokePad * 2));
+  }
+
+  @override
+  void performLayout() {
+    size = constraints.constrain(_layoutPainters(maxWidth: constraints.maxWidth));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final textOffset = offset.translate(
+      (size.width - _fill.width) / 2,
+      (size.height - _fill.height) / 2,
+    );
+    _stroke.paint(context.canvas, textOffset);
+    _fill.paint(context.canvas, textOffset);
+  }
+
+  @override
+  bool hitTestSelf(Offset position) => true;
 }

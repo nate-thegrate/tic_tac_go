@@ -228,7 +228,11 @@ class Backdrop extends StatelessWidget {
                 boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
               ),
               child: RepaintBoundary(
-                child: RefPaint(paint, expanded: false, child: ClipRect(child: MainContent())),
+                child: RefPaint(
+                  paint,
+                  expanded: false,
+                  child: ClipRect(clipper: _Clipper(), child: MainContent()),
+                ),
               ),
             ),
           ),
@@ -236,4 +240,14 @@ class Backdrop extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Clipper extends CustomClipper<Rect> {
+  const _Clipper();
+
+  @override
+  Rect getClip(ui.Size size) => Rect.fromLTRB(0, -1.0E+9, size.width, 1.0E+9);
+
+  @override
+  bool shouldReclip(covariant CustomClipper<ui.Rect> oldClipper) => true;
 }

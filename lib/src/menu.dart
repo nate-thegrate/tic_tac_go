@@ -29,8 +29,7 @@ class MainContent extends StatelessWidget {
       children: [
         GestureDetector(
           behavior: .opaque,
-          onPanDown: (details) {
-            MenuPage.current.value = .players;
+          onPanDown: (_) {
             Board.reset();
           },
           child: SizedBox.square(
@@ -118,7 +117,10 @@ class MainContent extends StatelessWidget {
             },
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
-              final winner = ref.select(Board.state, (data) => data.winner);
+              final (winner, isDraw) = ref.select(
+                Board.state,
+                (data) => (data.winner, data.isFull),
+              );
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
               final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
@@ -143,7 +145,11 @@ class MainContent extends StatelessWidget {
                 };
               } else {
                 textSpan = TextSpan(
-                  text: winner != null ? '$playerText wins!' : ' $playerText\'s move ',
+                  text: winner != null
+                      ? '$playerText wins!'
+                      : isDraw
+                      ? 'DRAW!'
+                      : ' $playerText\'s move ',
                 );
               }
 
@@ -548,7 +554,10 @@ class Menu extends RefWidget {
                       child: Padding(
                         padding: const .symmetric(vertical: 5.0),
                         child: Center(
-                          child: Text(page.label, style: GoogleFonts.permanentMarker(fontSize: 18)),
+                          child: Text(
+                            page.label.toUpperCase(),
+                            style: GoogleFonts.permanentMarker(fontSize: 18),
+                          ),
                         ),
                       ),
                     ),
