@@ -29,10 +29,9 @@ class MainContent extends StatelessWidget {
       children: [
         GestureDetector(
           behavior: .opaque,
-          onPanDown: (details) async {
-            await playingTransition.reverse();
-            Board.state.clear();
-            Board.history.clear();
+          onPanDown: (details) {
+            MenuPage.current.value = .players;
+            Board.reset();
           },
           child: SizedBox.square(
             dimension: 48,
@@ -226,14 +225,20 @@ class MainContent extends StatelessWidget {
 
     return Column(
       mainAxisSize: .min,
-      spacing: 16,
       children: [
         Flexible(
           child: _MainContentLayout(
             menu: Menu(),
             board: RefAspectRatio(
               (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
-              child: Board(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Padding(
+                    padding: .all(constraints.biggest.shortestSide / 32),
+                    child: const Board(),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -311,7 +316,7 @@ class Menu extends RefWidget {
 
         if (ref.watch(goMode)) {
           final linePaint = Paint()
-            ..color = const Black(1)
+            ..color = const Black()
             ..strokeWidth = 2
             ..strokeCap = .square;
 
@@ -332,7 +337,7 @@ class Menu extends RefWidget {
         } else {
           final double strokeWidth = math.max(2, math.min(cellWidth, cellHeight) * 0.1);
           final linePaint = Paint()
-            ..color = const Black(1)
+            ..color = const Black()
             ..strokeWidth = strokeWidth
             ..strokeCap = .round;
 
@@ -379,22 +384,153 @@ class Menu extends RefWidget {
     return Text('${cols}x$rows', style: TextStyle(fontWeight: .w600, fontSize: 16));
   }
 
+  static Widget _option({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelect,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: .opaque,
+        onPanDown: (_) => onSelect(),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Black(selected ? 0 : 0.1),
+            border: selected
+                ? BoxBorder.symmetric(horizontal: BorderSide(color: Black(0.1), width: 4))
+                : null,
+          ),
+          child: Padding(
+            padding: const .symmetric(vertical: 8.0),
+            child: Center(
+              child: Text(label.toUpperCase(), style: GoogleFonts.permanentMarker(fontSize: 22)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _radioOption({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelect,
+  }) {
+    return GestureDetector(
+      behavior: .opaque,
+      onPanDown: (_) => onSelect(),
+      child: Row(
+        mainAxisSize: .min,
+        spacing: 14,
+        children: [
+          SizedBox.square(
+            dimension: 15,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: .circle,
+                color: selected ? Colors.black : null,
+                border: .all(color: const Black(), width: 2),
+              ),
+            ),
+          ),
+          Text(label, style: GoogleFonts.permanentMarker(fontSize: 22)),
+        ],
+      ),
+    );
+  }
+
+  static Widget _players(BuildContext context) {
+    final difficulty = ref.watch(Difficulty.current);
+    final isTwoPlayer = difficulty == null;
+    return Column(
+      spacing: 4,
+      children: [
+        Spacer(),
+        Row(
+          children: [
+            _option(
+              label: '1 player',
+              selected: !isTwoPlayer,
+              onSelect: () => twoPlayer.value = false,
+            ),
+            _option(
+              label: '2 players',
+              selected: isTwoPlayer,
+              onSelect: () => twoPlayer.value = true,
+            ),
+          ],
+        ),
+        if (!isTwoPlayer)
+          Expanded(
+            child: Align(
+              alignment: .xy(0, -0.75),
+              child: Column(
+                mainAxisSize: .min,
+                crossAxisAlignment: .start,
+                children: [
+                  for (final level in Difficulty.values)
+                    _radioOption(
+                      label: level.name.toUpperCase(),
+                      selected: difficulty == level,
+                      onSelect: () => Difficulty.selected.value = level,
+                    ),
+                ],
+              ),
+            ),
+          )
+        else
+          Spacer(),
+      ],
+    );
+  }
+
+  static Widget _rules(BuildContext context) {
+    final ruleset = ref.watch(Ruleset.current);
+    final minDimension = ref.select(Board.state, (data) => math.min(data.rows, data.cols));
+    return Column(
+      crossAxisAlignment: .stretch,
+      children: [
+        for (final option in Ruleset.filtered(minDimension))
+          if (option.text(minDimension) case (:final label, :final description))
+            Expanded(
+              child: GestureDetector(
+                behavior: .opaque,
+                onPanDown: (_) => Ruleset.current.value = option,
+                child: DecoratedBox(
+                  decoration: ruleset == option
+                      ? BoxDecoration(border: Border.all(width: 4))
+                      : BoxDecoration(color: Black(0.1)),
+                  child: Padding(
+                    padding: const .symmetric(vertical: 8.0),
+                    child: Center(
+                      child: Text.rich(
+                        TextSpan(
+                          text: label.toUpperCase(),
+                          children: [TextSpan(text: '\n$description')],
+                        ),
+                        style: GoogleFonts.permanentMarker(fontSize: 22),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentPage = ref.watch(MenuPage.current);
     final List<Widget> contents = switch (currentPage) {
-      .players => [
-        // TODO
-      ],
+      .players => const [Expanded(child: RefBuilder(_players))],
       .boardSize => const [
         Flexible(
           child: AspectRatio(aspectRatio: 1, child: Builder(builder: _boardSize)),
         ),
         RefBuilder(_boardSizeLabel),
       ],
-      .rules => [
-        // TODO
-      ],
+      .rules => const [Expanded(child: RefBuilder(_rules))],
     };
     return Center(
       child: Column(

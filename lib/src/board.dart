@@ -200,7 +200,12 @@ class Board extends StatelessWidget {
     switchTurn();
   }
 
-  static void reset() {}
+  static void reset() async {
+    await playingTransition.reverse();
+    state.clear();
+    history.clear();
+    turn.value = .x;
+  }
 
   static (int, int)? currentMark;
   static final playerMarkAnimation = Get.vsync();

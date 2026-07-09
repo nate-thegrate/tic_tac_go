@@ -15,15 +15,17 @@ final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 const root3over2 = 0.8660254037844386;
 
+final twoPlayer = Get.it(false);
+
 enum Difficulty {
   easy,
   hard,
   brutal;
 
   /// The user's chosen difficulty.
-  ///
-  /// `null` if it's a 2-player game.
-  static final current = Get.it<Difficulty?>(null);
+  static final current = Get.compute((ref) => ref.watch(twoPlayer) ? null : ref.watch(selected));
+
+  static final selected = Get.it(easy);
 }
 
 enum Ruleset {
@@ -32,11 +34,26 @@ enum Ruleset {
   swap2,
   connect6;
 
+  static Iterable<Ruleset> filtered(int minBoardDimension) {
+    return minBoardDimension >= 6 ? values : values.where((ruleset) => ruleset != .connect6);
+  }
+
+  ({String label, String description}) text(int minBoardDimension) => switch (this) {
+    gomoku when minBoardDimension == 3 => (label: 'tic-tac-toe', description: ''),
+    gomoku => (label: 'gomoku', description: ''),
+    renju => (label: 'renju', description: ''),
+    swap2 => (label: 'swap 2', description: ''),
+    connect6 when minBoardDimension < 6 => throw StateError(
+      'Can\'t pick connect6 with board dimension of $minBoardDimension',
+    ),
+    connect6 => (label: 'connect 6', description: ''),
+  };
+
   static final current = Get.it(gomoku);
 }
 
 class Black extends Color {
-  const Black(double alpha) : super.from(alpha: alpha, red: 0, blue: 0, green: 0);
+  const Black([double alpha = 1.0]) : super.from(alpha: alpha, red: 0, blue: 0, green: 0);
 }
 
 Future<void> loadShaders() async {
