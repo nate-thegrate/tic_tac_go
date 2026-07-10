@@ -29,3 +29,11 @@ flutter:
   shaders:
     - shaders/paper.frag
     - shaders/marker.frag
+
+  fonts:
+    - family: patrick hand
+      fonts:
+        - asset: assets/fonts/PatrickHand.ttf
+    - family: permanent marker
+      fonts:
+        - asset: assets/fonts/PermanentMarker.ttf

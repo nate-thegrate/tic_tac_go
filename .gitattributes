@@ -1,1 +1,2 @@
 assets/wood_backdrop.jpg filter=lfs diff=lfs merge=lfs -text
+assets/fonts/*.ttf filter=lfs diff=lfs merge=lfs -text
