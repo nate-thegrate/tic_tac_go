@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
@@ -157,7 +156,8 @@ class MainContent extends StatelessWidget {
 
               return Text.rich(
                 textSpan,
-                style: GoogleFonts.permanentMarker(
+                style: TextStyle(
+                  fontFamily: 'permanent marker',
                   fontSize: 24,
                   color: Color.from(alpha: (2 * t - 1).abs(), red: 0, green: 0, blue: 0),
                 ),
@@ -411,7 +411,7 @@ class Menu extends RefWidget {
           child: Padding(
             padding: const .symmetric(vertical: 8.0),
             child: Center(
-              child: Text(label.toUpperCase(), style: GoogleFonts.permanentMarker(fontSize: 22)),
+              child: Text(label.toUpperCase(), style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22)),
             ),
           ),
         ),
@@ -441,7 +441,7 @@ class Menu extends RefWidget {
               ),
             ),
           ),
-          Text(label, style: GoogleFonts.permanentMarker(fontSize: 22)),
+          Text(label, style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22)),
         ],
       ),
     );
@@ -516,7 +516,7 @@ class Menu extends RefWidget {
                           text: label.toUpperCase(),
                           children: [TextSpan(text: '\n$description')],
                         ),
-                        style: GoogleFonts.permanentMarker(fontSize: 22),
+                        style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
                       ),
                     ),
                   ),
@@ -558,7 +558,7 @@ class Menu extends RefWidget {
                         child: Center(
                           child: Text(
                             page.label.toUpperCase(),
-                            style: GoogleFonts.permanentMarker(fontSize: 18),
+                            style: const TextStyle(fontFamily: 'permanent marker', fontSize: 18),
                           ),
                         ),
                       ),

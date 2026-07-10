@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/menu.dart';
@@ -701,7 +700,8 @@ class _RenderOutlinedText extends RenderBox {
     _stroke = TextPainter(
       text: TextSpan(
         text: _label,
-        style: GoogleFonts.permanentMarker(
+        style: TextStyle(
+          fontFamily: 'permanent marker',
           fontSize: _fontSize,
           foreground: Paint()
             ..style = .stroke
@@ -724,7 +724,11 @@ class _RenderOutlinedText extends RenderBox {
     _fill = TextPainter(
       text: TextSpan(
         text: _label,
-        style: GoogleFonts.permanentMarker(fontSize: _fontSize, color: Colors.black),
+        style: TextStyle(
+          fontFamily: 'permanent marker',
+          fontSize: _fontSize,
+          color: Colors.black,
+        ),
       ),
       textAlign: .center,
       textDirection: .ltr,

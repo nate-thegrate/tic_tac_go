@@ -11,7 +11,6 @@ dependencies:
     sdk: flutter
   get_hooked:
     path: ../get_hooked/packages/get_hooked
-  google_fonts: ^8.1.0
   marionette_flutter: ^0.6.0
   meta: ^1.18.0
 
