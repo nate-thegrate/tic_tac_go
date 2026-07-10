@@ -15,19 +15,6 @@ final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 const root3over2 = 0.8660254037844386;
 
-final twoPlayer = Get.it(false);
-
-enum Difficulty {
-  easy,
-  hard,
-  brutal;
-
-  /// The user's chosen difficulty.
-  static final current = Get.compute((ref) => ref.watch(twoPlayer) ? null : ref.watch(selected));
-
-  static final selected = Get.it(easy);
-}
-
 enum Ruleset {
   gomoku,
   renju,
@@ -35,11 +22,12 @@ enum Ruleset {
   connect6;
 
   static Iterable<Ruleset> filtered(int minBoardDimension) {
-    return minBoardDimension >= 6 ? values : values.where((ruleset) => ruleset != .connect6);
+    return minBoardDimension >= 6 ? values : values.where((ruleset) => ruleset != connect6);
   }
 
   ({String label, String description}) text(int minBoardDimension) => switch (this) {
     gomoku when minBoardDimension == 3 => (label: 'tic-tac-toe', description: ''),
+    gomoku when minBoardDimension == 4 => (label: '4 in a row', description: ''),
     gomoku => (label: 'gomoku', description: ''),
     renju => (label: 'renju', description: ''),
     swap2 => (label: 'swap 2', description: ''),
@@ -48,6 +36,10 @@ enum Ruleset {
     ),
     connect6 => (label: 'connect 6', description: ''),
   };
+
+  int winLength(BoardData data) {
+    return this == connect6 ? 6 : math.min(math.min(data.rows, data.cols), 5);
+  }
 
   static final current = Get.it(gomoku);
 }

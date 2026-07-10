@@ -14,6 +14,11 @@ enum PlayerMark {
   x,
   o;
 
+  PlayerMark get opponent => switch (this) {
+    x => .o,
+    o => .x,
+  };
+
   Color get color => switch (this) {
     x => const Color(0xFFFF6010),
     o => const Color(0xFF0098A0),
@@ -41,26 +46,25 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   int get cols => first.length;
   int get rows => _list.length;
 
-  /// The number of items in a row required to win.
-  int get winLength => math.min(math.min(rows, cols), 5);
+  /// Unit steps for horizontal, vertical, and both diagonals.
+  static const directions = [
+    (0, 1), // horizontal →
+    (1, 0), // vertical ↓
+    (1, 1), // diagonal ↘
+    (1, -1), // diagonal ↙
+  ];
 
   static final _winningRunCache = Expando<List<(int row, int col)>>();
 
   /// The first winning run found, if any.
   ///
   /// Returns `[(-1, -1)]` if the game is a draw.
-  List<(int row, int col)>? get winningRun {
+  List<(int row, int col)>? winningRun(Ruleset ruleset) {
     if (_winningRunCache[this] case final cached?) {
       return cached.isEmpty ? null : cached;
     }
 
-    final needed = winLength;
-    const directions = [
-      (0, 1), // horizontal →
-      (1, 0), // vertical ↓
-      (1, 1), // diagonal ↘
-      (1, -1), // diagonal ↙
-    ];
+    final needed = ruleset.winLength(this);
 
     for (var row = 0; row < rows; row++) {
       for (var col = 0; col < cols; col++) {
@@ -97,7 +101,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
 
   /// If one of the players has won (by having a number of items in a row, straight or diagonally,
   /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
-  PlayerMark? get winner => switch (winningRun?.firstOrNull) {
+  PlayerMark? winner(Ruleset ruleset) => switch (winningRun(ruleset)?.firstOrNull) {
     (-1, -1) => null,
     (final row, final col) => _list[row][col],
     null => null,
@@ -113,7 +117,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   }
 
   /// Whether the game has a winner or the board is completely filled.
-  bool get isGameOver => winner != null || isFull;
+  bool isGameOver(Ruleset ruleset) => winner(ruleset) != null || isFull;
 
   @protected
   @redeclare
@@ -229,18 +233,12 @@ class Board extends StatelessWidget {
   static final history = Get.list<(int row, int col)>();
 
   static final turn = Get.it(PlayerMark.x);
-  static void switchTurn() {
-    turn.value = switch (turn.value) {
-      .x => .o,
-      .o => .x,
-    };
-  }
 
   static void undo([_]) {
     if (history.isEmpty) return;
     final (row, col) = history.removeLast();
     state.update(row, col, null);
-    switchTurn();
+    turn.value = turn.value.opponent;
   }
 
   /// Clears the board and starts a new game without leaving play mode.
@@ -324,6 +322,7 @@ class Board extends StatelessWidget {
       .dismissed => isGoMode,
       .forward || .reverse => false,
     };
+    final ruleset = ref.watch(Ruleset.current);
     if (shouldSkipPaint) return;
     if (playerMarkAnimation.isActive) ref.setWillChangeHint();
 
@@ -334,6 +333,7 @@ class Board extends StatelessWidget {
     final cellWidth = width / cols;
     final cellHeight = height / rows;
     final minCell = math.min(cellWidth, cellHeight);
+    final winningRun = board.winningRun(ruleset);
 
     if (isGoMode) {
       final linePaint = Paint()
@@ -417,7 +417,7 @@ class Board extends StatelessWidget {
           ..restore();
       }
 
-      final winningCells = {...?board.winningRun};
+      final winningCells = {...?winningRun};
       final stones = <StoneData>[];
       StoneData? fallingStone;
       for (var row = 0; row < rows; row++) {
@@ -446,7 +446,7 @@ class Board extends StatelessWidget {
       for (final StoneData(rect: stoneRect, :mark, :opacity) in stones.where(isWinning)) {
         final Rect(:center) = stoneRect;
         final winnerGlow = mark.winnerGlow.withValues(alpha: mark.winnerGlow.a * opacity);
-        final glowRadius = stoneRect.shortestSide * 2 / 3;
+        final glowRadius = stoneRect.shortestSide * 0.64;
         canvas.drawCircle(
           center,
           glowRadius,
@@ -455,7 +455,7 @@ class Board extends StatelessWidget {
               center,
               glowRadius,
               [winnerGlow, winnerGlow, winnerGlow.withValues(alpha: 0)],
-              const [0.0, 0.7, 1.0],
+              const [0.0, 0.8, 1.0],
             ),
         );
       }
@@ -538,7 +538,7 @@ class Board extends StatelessWidget {
         }
       }
 
-      if (board.winningRun case final cells? when !cells.first.$1.isNegative) {
+      if (winningRun case final cells? when !cells.first.$1.isNegative) {
         final (firstRow, firstCol) = cells.first;
         final (lastRow, lastCol) = cells.last;
         var start = Offset((firstCol + 0.5) * cellWidth, (firstRow + 0.5) * cellHeight);
@@ -566,7 +566,8 @@ class Board extends StatelessWidget {
           behavior: .opaque,
           onPanDown: (details) async {
             if (playerMarkAnimation.isActive) return;
-            if (state.value.isGameOver) {
+            final ruleset = Ruleset.current.value;
+            if (state.value.isGameOver(ruleset)) {
               GameEnd.opacity.jumpTo(1);
               return;
             }
@@ -583,7 +584,7 @@ class Board extends StatelessWidget {
 
             state.update(down, across, turn.value);
             final mark = currentMark = (down, across);
-            final gameOver = state.value.isGameOver;
+            final gameOver = state.value.isGameOver(ruleset);
             gameOver ? history.clear() : history.add(mark);
             playerMarkAnimation.duration = goMode.value
                 ? const Duration(milliseconds: 325)
@@ -592,11 +593,11 @@ class Board extends StatelessWidget {
 
             if (gameOver) {
               await Future<void>.delayed(const Duration(milliseconds: 1500));
-              if (state.value.isGameOver && GameEnd.opacity.value == 0) {
+              if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
                 await GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 350));
               }
             } else {
-              switchTurn();
+              turn.value = turn.value.opponent;
             }
           },
           child: RefOpacity((ref) => 1 - ref.watch(GameEnd.opacity) / 2, child: RefPaint(paint)),
@@ -614,7 +615,8 @@ class GameEnd extends RefWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (ref.select(Board.state, (data) => !data.isGameOver)) {
+    final ruleset = ref.watch(Ruleset.current);
+    if (ref.select(Board.state, (data) => !data.isGameOver(ruleset))) {
       return const SizedBox.shrink();
     }
 

@@ -6,6 +6,7 @@ import 'package:get_hooked/get_hooked.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/difficulty.dart';
 
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
@@ -117,9 +118,10 @@ class MainContent extends StatelessWidget {
             },
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
+              final ruleset = ref.watch(Ruleset.current);
               final (winner, isDraw) = ref.select(
                 Board.state,
-                (data) => (data.winner, data.isFull),
+                (data) => (data.winner(ruleset), data.isFull),
               );
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
