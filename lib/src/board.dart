@@ -8,6 +8,7 @@ import 'package:get_hooked/get_hooked.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
+import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/menu.dart';
 
 enum PlayerMark {
@@ -267,13 +268,23 @@ class Board extends StatelessWidget {
       final (row, col) = history.removeLast();
       state.update(row, col, null);
       turn.value = turn.value.opponent;
+      game_log.undoLast();
     }
 
     undoOnce();
     if (undoAiAndUser && history.isNotEmpty) undoOnce();
   }
 
+  static void _emitGameOverIfNeeded(Ruleset ruleset) {
+    final data = state.value;
+    game_log.maybeEmitBrutalLoss(
+      winner: data.winner(ruleset),
+      winningRun: data.winningRun(ruleset),
+    );
+  }
+
   static Future<void> _runGameEndSequence(Ruleset ruleset) async {
+    _emitGameOverIfNeeded(ruleset);
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
       GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 800));
@@ -287,11 +298,19 @@ class Board extends StatelessWidget {
     await playerMarkAnimation.forward(from: 0);
   }
 
-  /// Places [mark] at [row]/col], updates history, and returns whether the game ended.
-  static bool _commitMark(int row, int col, PlayerMark mark, Ruleset ruleset) {
+  /// Places [mark] at [row],[col], updates history, and returns whether the game ended.
+  static bool _commitMark(
+    int row,
+    int col,
+    PlayerMark mark,
+    Ruleset ruleset, {
+    required bool byAi,
+  }) {
     state.update(row, col, mark);
     currentMark = (row, col);
+    game_log.recordMove(row: row, col: col, mark: mark, byAi: byAi);
     final gameOver = state.value.isGameOver(ruleset);
+    // Undo stack is cleared at game end; [game_log] keeps the full transcript.
     gameOver ? history.clear() : history.add((row, col));
     return gameOver;
   }
@@ -300,13 +319,24 @@ class Board extends StatelessWidget {
     final difficulty = Difficulty.selected.value;
     final (row, col) = await difficulty.aiMove(ruleset, state.value);
     final aiMark = turn.value;
-    final gameOver = _commitMark(row, col, aiMark, ruleset);
+    final gameOver = _commitMark(row, col, aiMark, ruleset, byAi: true);
     await _animatePlacement();
     if (gameOver) {
       await _runGameEndSequence(ruleset);
     } else {
       turn.value = aiMark.opponent;
     }
+  }
+
+  static void _startLoggedGame() {
+    game_log.startGame(
+      difficulty: Difficulty.current.value,
+      ruleset: Ruleset.current.value,
+      rows: state.rows,
+      cols: state.cols,
+      human: humanPlayer.value,
+      goMode: goMode.value,
+    );
   }
 
   /// Resolves sides and starts the game (including an opening AI move when needed).
@@ -316,6 +346,7 @@ class Board extends StatelessWidget {
     history.clear();
     currentMark = null;
     _assignSides();
+    _startLoggedGame();
     if (humanPlayer.value == .o) {
       inputLocked = true;
       try {
@@ -333,6 +364,7 @@ class Board extends StatelessWidget {
     history.clear();
     currentMark = null;
     _assignSides();
+    _startLoggedGame();
     if (humanPlayer.value == .o) {
       inputLocked = true;
       try {
@@ -353,6 +385,7 @@ class Board extends StatelessWidget {
     humanPlayer.value = null;
     inputLocked = false;
     currentMark = null;
+    game_log.clear();
   }
 
   static (int, int)? currentMark;
@@ -682,7 +715,7 @@ class Board extends StatelessWidget {
             inputLocked = true;
             try {
               final userMark = turn.value;
-              final gameOver = _commitMark(down, across, userMark, ruleset);
+              final gameOver = _commitMark(down, across, userMark, ruleset, byAi: false);
               final anim = _animatePlacement();
 
               final difficulty = Difficulty.current.value;
@@ -693,7 +726,7 @@ class Board extends StatelessWidget {
                   difficulty.aiMove(ruleset, state.value),
                 ).wait;
                 turn.value = userMark.opponent;
-                final aiGameOver = _commitMark(aiRow, aiCol, turn.value, ruleset);
+                final aiGameOver = _commitMark(aiRow, aiCol, turn.value, ruleset, byAi: true);
                 await _animatePlacement();
                 if (aiGameOver) {
                   await _runGameEndSequence(ruleset);
