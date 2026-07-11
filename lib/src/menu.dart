@@ -197,6 +197,7 @@ class BottomBar extends StatelessWidget {
                   MenuPage.current.value = .rules;
                 case .rules:
                   playing.value = true;
+                  Board.beginGame();
               }
             },
             child: RefBuilder((context) {
@@ -209,6 +210,9 @@ class BottomBar extends StatelessWidget {
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
               final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+              final human = ref.watch(Board.humanPlayer);
+              // Still "YOUR MOVE" during the human's placement animation (turn has not switched yet).
+              final usersTurn = human != null && player == human;
 
               final TextSpan textSpan;
               if (t < 0.5) {
@@ -234,6 +238,8 @@ class BottomBar extends StatelessWidget {
                       ? '$playerText wins!'
                       : isDraw
                       ? 'DRAW!'
+                      : usersTurn
+                      ? 'YOUR MOVE'
                       : ' $playerText\'s move ',
                 );
               }

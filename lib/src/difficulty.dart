@@ -104,7 +104,7 @@ List<(int row, int col)> _candidateMoves(List<List<PlayerMark?>> board, int winL
       for (var col = colMin; col <= colMax; col++) {
         if (board[row][col] != null) continue;
         final distance = math.max((row - occupiedRow).abs(), (col - occupiedCol).abs());
-        if (distance <= winLength) candidates.add((row, col));
+        if (distance < winLength) candidates.add((row, col));
       }
     }
   }

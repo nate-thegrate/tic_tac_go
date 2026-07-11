@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
+import 'package:tic_tac_go/src/difficulty.dart';
 import 'package:tic_tac_go/src/menu.dart';
 
 enum PlayerMark {
@@ -240,20 +241,106 @@ class Board extends StatelessWidget {
 
   static final turn = Get.it(PlayerMark.x);
 
-  static void undo([_]) {
-    if (history.isEmpty) return;
-    final (row, col) = history.removeLast();
-    state.update(row, col, null);
-    turn.value = turn.value.opponent;
+  /// The human's mark in a 1-player game; `null` in 2-player.
+  static final humanPlayer = Get.it<PlayerMark?>(null);
+
+  /// True while a move animation and/or AI computation is in progress.
+  static var inputLocked = false;
+
+  static void _assignSides() {
+    if (twoPlayer.value) {
+      humanPlayer.value = null;
+    } else {
+      humanPlayer.value = PlayerMark.userSelection.value ?? (math.Random().nextBool() ? .x : .o);
+    }
+    turn.value = .x;
   }
 
-  /// Clears the board and starts a new game without leaving play mode.
-  static void playAgain([_]) {
+  static void undo([_]) {
+    if (inputLocked || history.isEmpty) return;
+
+    // After an AI move it's the human's turn, so the last history entry is the AI's.
+    final undoAiAndUser = humanPlayer.value != null && turn.value == humanPlayer.value;
+
+    void undoOnce() {
+      if (history.isEmpty) return;
+      final (row, col) = history.removeLast();
+      state.update(row, col, null);
+      turn.value = turn.value.opponent;
+    }
+
+    undoOnce();
+    if (undoAiAndUser && history.isNotEmpty) undoOnce();
+  }
+
+  static Future<void> _runGameEndSequence(Ruleset ruleset) async {
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
+      GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 800));
+    }
+  }
+
+  static Future<void> _animatePlacement() async {
+    playerMarkAnimation.duration = goMode.value
+        ? const Duration(milliseconds: 325)
+        : const Duration(milliseconds: 225);
+    await playerMarkAnimation.forward(from: 0);
+  }
+
+  /// Places [mark] at [row]/col], updates history, and returns whether the game ended.
+  static bool _commitMark(int row, int col, PlayerMark mark, Ruleset ruleset) {
+    state.update(row, col, mark);
+    currentMark = (row, col);
+    final gameOver = state.value.isGameOver(ruleset);
+    gameOver ? history.clear() : history.add((row, col));
+    return gameOver;
+  }
+
+  static Future<void> _playAiMove(Ruleset ruleset) async {
+    final difficulty = Difficulty.selected.value;
+    final (row, col) = await difficulty.aiMove(ruleset, state.value);
+    final aiMark = turn.value;
+    final gameOver = _commitMark(row, col, aiMark, ruleset);
+    await _animatePlacement();
+    if (gameOver) {
+      await _runGameEndSequence(ruleset);
+    } else {
+      turn.value = aiMark.opponent;
+    }
+  }
+
+  /// Resolves sides and starts the game (including an opening AI move when needed).
+  static Future<void> beginGame() async {
     GameEnd.opacity.reset();
     state.clear();
     history.clear();
-    turn.value = .x;
     currentMark = null;
+    _assignSides();
+    if (humanPlayer.value == .o) {
+      inputLocked = true;
+      try {
+        await _playAiMove(Ruleset.current.value);
+      } finally {
+        inputLocked = false;
+      }
+    }
+  }
+
+  /// Clears the board and starts a new game without leaving play mode.
+  static Future<void> playAgain([_]) async {
+    GameEnd.opacity.reset();
+    state.clear();
+    history.clear();
+    currentMark = null;
+    _assignSides();
+    if (humanPlayer.value == .o) {
+      inputLocked = true;
+      try {
+        await _playAiMove(Ruleset.current.value);
+      } finally {
+        inputLocked = false;
+      }
+    }
   }
 
   /// Leaves play mode and returns to the setup menu.
@@ -263,6 +350,8 @@ class Board extends StatelessWidget {
     state.clear();
     history.clear();
     turn.value = .x;
+    humanPlayer.value = null;
+    inputLocked = false;
     currentMark = null;
   }
 
@@ -570,12 +659,15 @@ class Board extends StatelessWidget {
         GestureDetector(
           behavior: .opaque,
           onPanDown: (details) async {
-            if (playerMarkAnimation.isActive) return;
+            if (inputLocked || playerMarkAnimation.isActive) return;
             final ruleset = Ruleset.current.value;
             if (state.value.isGameOver(ruleset)) {
               GameEnd.opacity.jumpTo(1);
               return;
             }
+            final human = humanPlayer.value;
+            final isUsersTurn = human == null || turn.value == human;
+            if (!isUsersTurn) return;
 
             final box = context.findRenderObject()! as RenderBox;
             final Size(:width, :height) = box.size;
@@ -587,22 +679,37 @@ class Board extends StatelessWidget {
             if (down < 0 || down >= rows || across < 0 || across >= cols) return;
             if (state.value[down][across] != null) return;
 
-            state.update(down, across, turn.value);
-            final mark = currentMark = (down, across);
-            final gameOver = state.value.isGameOver(ruleset);
-            gameOver ? history.clear() : history.add(mark);
-            playerMarkAnimation.duration = goMode.value
-                ? const Duration(milliseconds: 325)
-                : const Duration(milliseconds: 225);
-            await playerMarkAnimation.forward(from: 0);
+            inputLocked = true;
+            try {
+              final userMark = turn.value;
+              final gameOver = _commitMark(down, across, userMark, ruleset);
+              final anim = _animatePlacement();
 
-            if (gameOver) {
-              await Future<void>.delayed(const Duration(milliseconds: 1500));
-              if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
-                GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 800));
+              final difficulty = Difficulty.current.value;
+              if (!gameOver && difficulty != null) {
+                // AI thinks while the user's mark animates in.
+                final (_, (aiRow, aiCol)) = await (
+                  anim,
+                  difficulty.aiMove(ruleset, state.value),
+                ).wait;
+                turn.value = userMark.opponent;
+                final aiGameOver = _commitMark(aiRow, aiCol, turn.value, ruleset);
+                await _animatePlacement();
+                if (aiGameOver) {
+                  await _runGameEndSequence(ruleset);
+                } else {
+                  turn.value = turn.value.opponent;
+                }
+              } else {
+                await anim;
+                if (gameOver) {
+                  await _runGameEndSequence(ruleset);
+                } else {
+                  turn.value = userMark.opponent;
+                }
               }
-            } else {
-              turn.value = turn.value.opponent;
+            } finally {
+              inputLocked = false;
             }
           },
           child: RefOpacity((ref) => 1 - ref.watch(GameEnd.opacity) / 2, child: RefPaint(paint)),
