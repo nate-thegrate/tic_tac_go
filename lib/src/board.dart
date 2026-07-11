@@ -250,10 +250,9 @@ class Board extends StatelessWidget {
   }
 
   /// Leaves play mode and returns to the setup menu.
-  static void reset([_]) async {
-    GameEnd.opacity.reset();
-    MenuPage.current.value = .players;
+  static void backToMenu([_]) async {
     await playingTransition.reverse();
+    GameEnd.opacity.reset();
     state.clear();
     history.clear();
     turn.value = .x;
@@ -444,6 +443,7 @@ class Board extends StatelessWidget {
       }
       stones.where(notWinning).forEach(drawStone);
       for (final StoneData(rect: stoneRect, :mark, :opacity) in stones.where(isWinning)) {
+        ref.setIsComplexHint();
         final Rect(:center) = stoneRect;
         final winnerGlow = mark.winnerGlow.withValues(alpha: mark.winnerGlow.a * opacity);
         final glowRadius = stoneRect.shortestSide * 0.64;
@@ -558,8 +558,6 @@ class Board extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Placement sits under the end-game options so those buttons don't also
-    // register a mark at the same coordinates.
     return Stack(
       children: [
         GestureDetector(
@@ -594,7 +592,7 @@ class Board extends StatelessWidget {
             if (gameOver) {
               await Future<void>.delayed(const Duration(milliseconds: 1500));
               if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
-                await GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 350));
+                GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 800));
               }
             } else {
               turn.value = turn.value.opponent;
@@ -613,6 +611,11 @@ class GameEnd extends RefWidget {
 
   static final opacity = Get.vsyncValue(0.0, curve: Curves.easeOutSine);
 
+  static void backToMenu() {
+    MenuPage.current.value = .players;
+    Board.backToMenu();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ruleset = ref.watch(Ruleset.current);
@@ -630,7 +633,7 @@ class GameEnd extends RefWidget {
             mainAxisSize: .min,
             children: [
               _EndGameOption(label: 'Play again', onSelect: Board.playAgain),
-              _EndGameOption(label: 'Back to menu', onSelect: Board.reset),
+              _EndGameOption(label: 'Back to menu', onSelect: backToMenu),
             ],
           ),
         ),

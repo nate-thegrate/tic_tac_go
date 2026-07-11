@@ -34,6 +34,7 @@ class BottomBar extends StatelessWidget {
   const BottomBar({super.key});
 
   static const height = 48.0;
+  static const minWidth = 392.0;
 
   static void _playArrow(PaintRef ref) {
     final PaintRef(:canvas, size: Size(:width, :height)) = ref;
@@ -55,11 +56,16 @@ class BottomBar extends StatelessWidget {
         GestureDetector(
           behavior: .opaque,
           onPanDown: (_) {
-            Board.reset();
+            if (playing.value) {
+              Board.backToMenu();
+              return;
+            }
+            MenuPage.current.value = MenuPage.values[math.max(MenuPage.current.value.index - 1, 0)];
           },
           child: SizedBox.square(
             dimension: height,
             child: RefPaint((ref) {
+              if (ref.select(MenuPage.current, (page) => page == .players)) return;
               final PaintRef(:canvas, size: Size(:width, :height)) = ref;
               const strokeWidth = 5.0;
               const xPad = 16.0;
@@ -69,7 +75,7 @@ class BottomBar extends StatelessWidget {
                 ..style = .stroke
                 ..strokeWidth = strokeWidth
                 ..strokeCap = .round
-                ..color = Black(math.max(ref.watch(playingTransition) * 2 - 1, 0));
+                ..color = const Black();
               canvas.drawPath(
                 Path()
                   ..moveTo(width - xPad, yPad)
@@ -131,6 +137,8 @@ class BottomBar extends StatelessWidget {
           child: GestureDetector(
             behavior: .opaque,
             onPanDown: (details) {
+              if (playing.value) return;
+
               switch (MenuPage.current.value) {
                 case .players:
                   MenuPage.current.value = .boardSize;
@@ -277,25 +285,23 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
   @override
   void performLayout(LayoutRef ref) {
     final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
-    // Menu expands to max height; reserve space so the bottom bar stays inside the paper.
-    final contentConstraints = BoxConstraints(
-      maxWidth: ref.constraints.maxWidth,
-      maxHeight: math.max(0.0, ref.constraints.maxHeight - BottomBar.height),
+    const sizeAdjustment = Offset(0, BottomBar.height);
+    final contentConstraints = BoxConstraints.loose(
+      (ref.constraints.biggest - sizeAdjustment) as Size,
     );
     final menuSize = menu.layout(constraints: contentConstraints);
     final boardSize = board.layout(constraints: contentConstraints);
-    menu.offset = Offset(-t * menuSize.width, (boardSize.height - menuSize.height) / 2 * t);
+    var Size(:width, :height) = Size.lerp(menuSize, boardSize, t)! + sizeAdjustment;
+    width = math.max(width, BottomBar.minWidth);
+    ref.size = Size(width, height);
+
+    bottomBar.layoutAlign(.bottomCenter, size: Size(width, BottomBar.height));
+    menu.offset = Offset(-menuSize.width, (boardSize.height - menuSize.height) / 2) * t;
     board.offset = Offset(
-      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t),
+      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t) +
+          (width - boardSize.width) * t / 2,
       (menuSize.height - boardSize.height) / 2 * (1 - t),
     );
-    const sizeAdjustment = Offset(0, BottomBar.height);
-    final totalSize = ref.size = Size.lerp(
-      menuSize + sizeAdjustment,
-      boardSize + sizeAdjustment,
-      t,
-    )!;
-    bottomBar.layoutAlign(.bottomCenter, size: Size(totalSize.width, BottomBar.height));
   }
 }
 
@@ -309,7 +315,21 @@ enum MenuPage {
     boardSize => 'board size',
   };
 
-  static final current = Get.it(MenuPage.players);
+  static final GetValue<MenuPage> current = Get.it(players)
+    ..hooked.addListener(() {
+      if (current.value != .rules) return;
+
+      switch (Ruleset.current.value) {
+        case .gomoku || .swap2:
+          return;
+        case .renju:
+          if (Board.state.value case BoardData(rows: >= 5, cols: >= 5)) return;
+        case .connect6:
+          if (Board.state.value case BoardData(rows: >= 6, cols: >= 6)) return;
+      }
+
+      Ruleset.current.value = .gomoku;
+    });
 }
 
 class Menu extends RefWidget {
@@ -521,29 +541,48 @@ class Menu extends RefWidget {
   static Widget _rules(BuildContext context) {
     final ruleset = ref.watch(Ruleset.current);
     final minDimension = ref.select(Board.state, (data) => math.min(data.rows, data.cols));
+    final isGoMode = ref.watch(goMode);
+    final selected = ruleset.text(minDimension, isGoMode);
     return Column(
       crossAxisAlignment: .stretch,
       children: [
+        Expanded(
+          child: FractionallySizedBox(
+            widthFactor: 0.95,
+            child: Align(
+              alignment: const .xy(-1, 1 / 3),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: selected.label.toUpperCase(),
+                      style: TextStyle(fontFamily: 'permanent marker', fontSize: 32),
+                    ),
+                    TextSpan(
+                      text: '\n\n${selected.description}',
+                      style: TextStyle(fontFamily: 'patrick hand', fontSize: 22),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
         for (final option in Ruleset.filtered(minDimension))
-          if (option.text(minDimension) case (:final label, :final description))
-            Expanded(
-              child: GestureDetector(
-                behavior: .opaque,
-                onPanDown: (_) => Ruleset.current.value = option,
-                child: DecoratedBox(
-                  decoration: ruleset == option
-                      ? BoxDecoration(border: Border.all(width: 4))
-                      : BoxDecoration(color: Black(0.1)),
-                  child: Padding(
-                    padding: const .symmetric(vertical: 8.0),
-                    child: Center(
-                      child: Text.rich(
-                        TextSpan(
-                          text: label.toUpperCase(),
-                          children: [TextSpan(text: '\n$description')],
-                        ),
-                        style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
-                      ),
+          if (option.text(minDimension, isGoMode) case (:final label, description: _))
+            GestureDetector(
+              behavior: .opaque,
+              onPanDown: (_) => Ruleset.current.value = option,
+              child: DecoratedBox(
+                decoration: ruleset == option
+                    ? BoxDecoration(border: Border.all(width: 4))
+                    : BoxDecoration(color: Black(0.1)),
+                child: Padding(
+                  padding: const .symmetric(vertical: 8.0),
+                  child: Center(
+                    child: Text.rich(
+                      TextSpan(text: label.toUpperCase()),
+                      style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
                     ),
                   ),
                 ),
@@ -557,7 +596,7 @@ class Menu extends RefWidget {
   Widget build(BuildContext context) {
     final currentPage = ref.watch(MenuPage.current);
     final Widget contents = switch (currentPage) {
-      .players => const Expanded(child: RefBuilder(_players)),
+      .players => RefBuilder(_players),
       .boardSize => const Column(
         mainAxisSize: .min,
         children: [
@@ -572,9 +611,10 @@ class Menu extends RefWidget {
             ),
           ),
           RefBuilder(_boardSizeLabel),
+          SizedBox(height: 8),
         ],
       ),
-      .rules => const Expanded(child: RefBuilder(_rules)),
+      .rules => RefBuilder(_rules),
     };
     return Center(
       child: Column(
@@ -603,7 +643,7 @@ class Menu extends RefWidget {
                 ),
             ],
           ),
-          contents,
+          Expanded(child: contents),
         ],
       ),
     );

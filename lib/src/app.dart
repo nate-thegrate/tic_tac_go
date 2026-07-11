@@ -17,25 +17,72 @@ const root3over2 = 0.8660254037844386;
 
 enum Ruleset {
   gomoku,
-  renju,
   swap2,
+  renju,
   connect6;
 
-  static Iterable<Ruleset> filtered(int minBoardDimension) {
-    return minBoardDimension >= 6 ? values : values.where((ruleset) => ruleset != connect6);
-  }
+  static Iterable<Ruleset> filtered(int minBoardDimension) => values.take(minBoardDimension - 2);
 
-  ({String label, String description}) text(int minBoardDimension) => switch (this) {
-    gomoku when minBoardDimension == 3 => (label: 'tic-tac-toe', description: ''),
-    gomoku when minBoardDimension == 4 => (label: '4 in a row', description: ''),
-    gomoku => (label: 'gomoku', description: ''),
-    renju => (label: 'renju', description: ''),
-    swap2 => (label: 'swap 2', description: ''),
-    connect6 when minBoardDimension < 6 => throw StateError(
-      'Can\'t pick connect6 with board dimension of $minBoardDimension',
-    ),
-    connect6 => (label: 'connect 6', description: ''),
-  };
+  ({String label, String description}) text(int minBoardDimension, bool isGoMode) {
+    late final first = isGoMode ? 'black' : 'X';
+    late final second = isGoMode ? 'white' : 'O';
+    late final stones = isGoMode ? 'stones' : 'Xs';
+    return switch (this) {
+      gomoku when minBoardDimension == 3 => (
+        label: isGoMode ? '3 in a row' : 'tic-tac-toe',
+        description:
+            'Players take turns ${isGoMode ? 'placing stones' : 'marking the board'} '
+            'until somebody gets three in a row!\n\n'
+            '(This is the only available ruleset for a ${Board.state.cols}x${Board.state.rows} board.)',
+      ),
+      gomoku => (
+        label: minBoardDimension == 4 ? '4 in a row' : 'gomoku',
+        description:
+            'Players take turns ${isGoMode ? 'placing stones' : 'marking the board'} '
+            'until somebody has ${minBoardDimension == 4 ? 'four' : 'five'} in a row '
+            '(vertically, horizontally, or diagonally).\n\n'
+            'No other restrictions apply'
+            '${isGoMode ? ': the black player has an advantage since they go first' : ', so the first player has an advantage'}.',
+      ),
+      swap2 => (
+        label: 'swap 2',
+        description:
+            'First, the $first player makes 3 moves ($first, $second, $first).\n'
+            'Afterward, the $second player has 3 options:\n\n'
+            '  1. Continue playing\n'
+            '  2. Swap: the first player must play as $second and the second player plays as $first\n'
+            '  3. Make 2 more moves, and then let the first player decide whether to swap\n\n'
+            'Then players take turns as normal until someone gets ${minBoardDimension == 4 ? 'four' : 'five'} in a row.',
+      ),
+      renju when minBoardDimension < 5 => throw StateError(
+        'Can\'t pick connect6 with board dimension of $minBoardDimension',
+      ),
+      renju => (
+        label: 'renju',
+        description:
+            'Some restrictions apply to the '
+            '${isGoMode ? 'black player to offset the advantage of going first' : 'first player to offset their advantage'}:\n\n'
+            '  • They can\'t simultaneously form two rows of 3 $stones '
+            'if both rows are unblocked on either side\n'
+            '  • They can\'t ever simultaneously form two rows of 4 $stones\n'
+            '  • They must have exactly 5 in a row in order to win '
+            '(6 or more doesn\'t count)',
+      ),
+      connect6 when minBoardDimension < 6 => throw StateError(
+        'Can\'t pick connect6 with board dimension of $minBoardDimension',
+      ),
+      connect6 => (
+        label: 'connect 6',
+        description: isGoMode
+            ? 'The black player places 1 stone on their first turn. '
+                  'From then on, players go back and forth, placing 2 stones each turn.\n\n'
+                  'The game ends when a player has 6 in a row.'
+            : 'The first player marks a single square with an X. '
+                  'From then on, players go back and forth, marking 2 squares at a time.\n\n'
+                  'The game ends when a player has 6 in a row.',
+      ),
+    };
+  }
 
   int winLength(BoardData data) {
     return this == connect6 ? 6 : math.min(math.min(data.rows, data.cols), 5);
@@ -196,42 +243,62 @@ class Backdrop extends StatelessWidget {
     }
   }
 
+  static Path _clipPath(ClipRef ref) {
+    if (ref.select(playingTransition.status, (status) => status.isCompleted)) {
+      return Path()..addRect(Rect.fromLTRB(0, -1.0E9, 1.0E9, 1.0E9));
+    }
+    return Path()..addRect(Offset.zero & ref.size);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final content = DecoratedBox(
+      key: GlobalObjectKey(context),
+      decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)]),
+      child: const RepaintBoundary(
+        child: RefPaint(
+          paint,
+          expanded: false,
+          child: RefClip.path(_clipPath, child: MainContent()),
+        ),
+      ),
+    );
+
+    Widget layoutBuilder(BuildContext context, BoxConstraints constraints) {
+      final maxSize = constraints.biggest;
+      final padding = maxSize.shortestSide / 32;
+
+      if (maxSize.width - 2 * padding >= BottomBar.minWidth) {
+        return Padding(
+          padding: .all(padding),
+          child: Center(child: content),
+        );
+      }
+
+      final maxHeight =
+          (maxSize.height - 2 * padding) * BottomBar.minWidth / (maxSize.width - 2 * padding);
+      return Padding(
+        padding: .all(padding),
+        child: FittedBox(
+          fit: .fitWidth,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: BottomBar.minWidth,
+              maxWidth: BottomBar.minWidth,
+              maxHeight: maxHeight,
+            ),
+            child: content,
+          ),
+        ),
+      );
+    }
+
     return GetScope(
       substitutes: {Substitution.value(goMode, isGoMode)},
       child: RefPaint(
         paintBackdrop,
-        child: LayoutBuilder(
-          builder: (context, constraints) => Padding(
-            padding: .all(constraints.biggest.shortestSide / 32),
-            child: const Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
-                ),
-                child: RepaintBoundary(
-                  child: RefPaint(
-                    paint,
-                    expanded: false,
-                    child: ClipRect(clipper: _Clipper(), child: MainContent()),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+        child: SafeArea(child: LayoutBuilder(builder: layoutBuilder)),
       ),
     );
   }
-}
-
-class _Clipper extends CustomClipper<Rect> {
-  const _Clipper();
-
-  @override
-  Rect getClip(ui.Size size) => Rect.fromLTRB(0, -1.0E+9, size.width, 1.0E+9);
-
-  @override
-  bool shouldReclip(covariant CustomClipper<ui.Rect> oldClipper) => true;
 }
