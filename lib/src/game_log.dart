@@ -1,3 +1,12 @@
+/// Session transcript for improving [Difficulty.brutal] from human wins.
+///
+/// When the human beats brutal, a JSON object is appended to [logFilePath]
+/// and printed as a single `[brutal_loss] …` line so a Grok `monitor`
+/// (e.g. tailing the log file) can pick it up.
+///
+/// Import with a prefix: `import '.../game_log.dart' as game_log;`
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,12 +17,7 @@ import 'package:tic_tac_go/src/difficulty.dart';
 
 /// One committed placement in the current game (survives [Board.history] clears).
 class GameLogMove {
-  const GameLogMove({
-    required this.row,
-    required this.col,
-    required this.mark,
-    required this.byAi,
-  });
+  const GameLogMove({required this.row, required this.col, required this.mark, required this.byAi});
 
   final int row;
   final int col;
@@ -28,13 +32,8 @@ class GameLogMove {
   };
 }
 
-/// Session transcript for improving [Difficulty.brutal] from human wins.
-///
-/// When the human beats brutal, a JSON object is appended to [logFilePath]
-/// and printed as a single `[brutal_loss] …` line so a Grok `monitor`
-/// (e.g. tailing the log file) can pick it up.
-///
-/// Import with a prefix: `import '.../game_log.dart' as game_log;`
+/// Flip to `true` to record games and emit brutal-loss training lines.
+var loggingEnabled = false;
 
 const logFilePath = 'logs/brutal_losses.jsonl';
 const stdoutMarker = '[brutal_loss]';
@@ -56,6 +55,7 @@ void startGame({
   required PlayerMark? human,
   required bool goMode,
 }) {
+  if (!loggingEnabled) return;
   _difficulty = difficulty;
   _ruleset = ruleset;
   _rows = rows;
@@ -68,6 +68,7 @@ void startGame({
 
 /// Call after swap2 (or similar) reassigns who plays which color.
 void setHuman(PlayerMark? human) {
+  if (!loggingEnabled) return;
   _human = human;
 }
 
@@ -77,16 +78,19 @@ void recordMove({
   required PlayerMark mark,
   required bool byAi,
 }) {
+  if (!loggingEnabled) return;
   moves.add(GameLogMove(row: row, col: col, mark: mark, byAi: byAi));
 }
 
 void undoLast([int count = 1]) {
+  if (!loggingEnabled) return;
   for (var i = 0; i < count && moves.isNotEmpty; i++) {
     moves.removeLast();
   }
 }
 
 void clear() {
+  if (!loggingEnabled) return;
   _difficulty = null;
   _ruleset = null;
   _rows = null;
@@ -102,6 +106,7 @@ void maybeEmitBrutalLoss({
   required PlayerMark? winner,
   required List<(int row, int col)>? winningRun,
 }) {
+  if (!loggingEnabled) return;
   if (_emittedForCurrentGame) return;
   if (_difficulty != Difficulty.brutal) return;
   final human = _human;

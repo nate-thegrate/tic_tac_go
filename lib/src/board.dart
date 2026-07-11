@@ -10,6 +10,7 @@ import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
 import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/menu.dart';
+import 'package:tic_tac_go/src/renju.dart';
 import 'package:tic_tac_go/src/swap2.dart';
 
 enum PlayerMark {
@@ -68,11 +69,15 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   /// The first winning run found, if any.
   ///
   /// Returns `[(-1, -1)]` if the game is a draw.
+  ///
+  /// Under renju: black wins only with an exact five (not overline); white wins
+  /// with five or more.
   List<(int row, int col)>? winningRun(Ruleset ruleset) {
     if (_winningRunCache[this] case final cached?) {
       return cached.isEmpty ? null : cached;
     }
 
+    final isRenju = ruleset == .renju;
     final needed = ruleset.winLength(this);
 
     for (var row = 0; row < rows; row++) {
@@ -92,11 +97,30 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
               break;
             }
           }
-          if (won) {
-            return _winningRunCache[this] = [
-              for (var i = 0; i < needed; i++) (row + i * dRow, col + i * dCol),
-            ];
+          if (!won) continue;
+
+          if (isRenju && mark == .x) {
+            // Black: exact five only — reject if the line extends to 6+.
+            final before = (row - dRow, col - dCol);
+            final after = (endRow + dRow, endCol + dCol);
+            final extendsBefore =
+                before.$1 >= 0 &&
+                before.$1 < rows &&
+                before.$2 >= 0 &&
+                before.$2 < cols &&
+                _list[before.$1][before.$2] == .x;
+            final extendsAfter =
+                after.$1 >= 0 &&
+                after.$1 < rows &&
+                after.$2 >= 0 &&
+                after.$2 < cols &&
+                _list[after.$1][after.$2] == .x;
+            if (extendsBefore || extendsAfter) continue;
           }
+
+          return _winningRunCache[this] = [
+            for (var i = 0; i < needed; i++) (row + i * dRow, col + i * dCol),
+          ];
         }
       }
     }
@@ -306,14 +330,29 @@ class Board extends StatelessWidget {
     await playerMarkAnimation.forward(from: 0);
   }
 
+  /// Whether [mark] may be placed at [row],[col] under [ruleset] (renju fouls, occupancy).
+  static bool isLegalPlacement(int row, int col, PlayerMark mark, Ruleset ruleset) {
+    if (row < 0 || row >= state.rows || col < 0 || col >= state.cols) return false;
+    if (state.value[row][col] != null) return false;
+    if (ruleset == .renju && mark == .x) {
+      final grid = [for (final r in state.value) List<PlayerMark?>.of(r)];
+      return Renju.isLegalFor(.x, grid, row, col);
+    }
+    return true;
+  }
+
   /// Places [mark] at [row],[col], updates history, and returns whether the game ended.
-  static bool commitMark(
+  ///
+  /// Returns `null` if the placement is illegal (e.g. renju foul for black).
+  static bool? commitMark(
     int row,
     int col,
     PlayerMark mark,
     Ruleset ruleset, {
     required bool byAi,
   }) {
+    if (!isLegalPlacement(row, col, mark, ruleset)) return null;
+
     state.update(row, col, mark);
     currentMark = (row, col);
     game_log.recordMove(row: row, col: col, mark: mark, byAi: byAi);
@@ -328,6 +367,10 @@ class Board extends StatelessWidget {
     final (row, col) = await difficulty.aiMove(ruleset, state.value);
     final aiMark = turn.value;
     final gameOver = commitMark(row, col, aiMark, ruleset, byAi: true);
+    if (gameOver == null) {
+      // Illegal AI move (shouldn't happen if the AI filters renju fouls).
+      return;
+    }
     await animatePlacement();
     if (gameOver) {
       await runGameEndSequence(ruleset);
@@ -746,7 +789,9 @@ class Board extends StatelessWidget {
               }
 
               final userMark = turn.value;
-              final gameOver = commitMark(down, across, userMark, ruleset, byAi: false);
+              if (!isLegalPlacement(down, across, userMark, ruleset)) return;
+
+              final gameOver = commitMark(down, across, userMark, ruleset, byAi: false)!;
               final anim = animatePlacement();
 
               final difficulty = Difficulty.current.value;
@@ -758,6 +803,10 @@ class Board extends StatelessWidget {
                 ).wait;
                 turn.value = userMark.opponent;
                 final aiGameOver = commitMark(aiRow, aiCol, turn.value, ruleset, byAi: true);
+                if (aiGameOver == null) {
+                  turn.value = userMark;
+                  return;
+                }
                 await animatePlacement();
                 if (aiGameOver) {
                   await runGameEndSequence(ruleset);

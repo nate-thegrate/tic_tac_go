@@ -185,11 +185,24 @@ abstract final class Swap2 {
           (row, col) = await Difficulty.selected.value.aiMove(ruleset, Board.state.value);
         }
         final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: true);
-        await Board.animatePlacement();
-        if (gameOver) {
-          reset();
-          await Board.runGameEndSequence(ruleset);
-          return;
+        if (gameOver == null) {
+          // Illegal plan cell under renju etc. — try a search move.
+          final (r2, c2) = await Difficulty.selected.value.aiMove(ruleset, Board.state.value);
+          final gameOver2 = Board.commitMark(r2, c2, mark, ruleset, byAi: true);
+          if (gameOver2 == null) continue;
+          await Board.animatePlacement();
+          if (gameOver2) {
+            reset();
+            await Board.runGameEndSequence(ruleset);
+            return;
+          }
+        } else {
+          await Board.animatePlacement();
+          if (gameOver) {
+            reset();
+            await Board.runGameEndSequence(ruleset);
+            return;
+          }
         }
         await _finishPlacementStep();
         if (!isPlacing) break;
@@ -202,7 +215,8 @@ abstract final class Swap2 {
   static Future<void> placeHumanMark(int row, int col) async {
     final ruleset = Ruleset.current.value;
     final mark = nextMark;
-    final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: false);
+    if (!Board.isLegalPlacement(row, col, mark, ruleset)) return;
+    final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: false)!;
     await Board.animatePlacement();
     if (gameOver) {
       reset();

@@ -4,10 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/renju.dart';
 
 final twoPlayer = Get.it(false);
 
-typedef _AiInput = ({List<List<PlayerMark?>> board, int winLength});
+typedef _AiInput = ({List<List<PlayerMark?>> board, int winLength, Ruleset ruleset});
 typedef _Cell = (int row, int col);
 typedef _OpenThreats = ({int openFours, int openThrees});
 
@@ -24,7 +25,7 @@ enum Difficulty {
   Future<(int row, int col)> aiMove(Ruleset ruleset, BoardData data) async {
     final winLength = ruleset.winLength(data);
     final board = [for (final row in data) List<PlayerMark?>.of(row)];
-    final input = (board: board, winLength: winLength);
+    final input = (board: board, winLength: winLength, ruleset: ruleset);
 
     return switch (this) {
       // Win → block → random. SynchronousFuture (no isolate).
@@ -181,20 +182,56 @@ List<_Cell> _movePool(List<List<PlayerMark?>> board, int winLength) {
   return candidates.isEmpty ? _allEmpty(board) : candidates;
 }
 
+bool _isLegalAiMove(
+  List<List<PlayerMark?>> board,
+  int row,
+  int col,
+  PlayerMark mark,
+  Ruleset ruleset,
+) {
+  if (board[row][col] != null) return false;
+  if (ruleset != .renju || mark != .x) return true;
+  return Renju.isLegalFor(.x, board, row, col);
+}
+
+List<_Cell> _legalPool(
+  List<List<PlayerMark?>> board,
+  int winLength,
+  Ruleset ruleset,
+  PlayerMark mark,
+) {
+  return [
+    for (final (row, col) in _movePool(board, winLength))
+      if (_isLegalAiMove(board, row, col, mark, ruleset)) (row, col),
+  ];
+}
+
 // --- Wins --------------------------------------------------------------------
 
-bool _formsWin(List<List<PlayerMark?>> board, int row, int col, PlayerMark mark, int winLength) {
+bool _formsWin(
+  List<List<PlayerMark?>> board,
+  int row,
+  int col,
+  PlayerMark mark,
+  int winLength, {
+  required Ruleset ruleset,
+}) {
   for (final (dRow, dCol) in BoardData.directions) {
     var count = 1;
     for (final sign in const [1, -1]) {
-      for (var step = 1; step < winLength; step++) {
+      for (var step = 1; step < winLength + 2; step++) {
         final r = row + sign * step * dRow;
         final c = col + sign * step * dCol;
         if (_at(board, r, c) != mark) break;
         count++;
       }
     }
-    if (count >= winLength) return true;
+    if (ruleset == .renju && mark == .x) {
+      // Black: exact five only (overline does not win).
+      if (count == 5) return true;
+    } else if (count >= winLength) {
+      return true;
+    }
   }
   return false;
 }
@@ -205,8 +242,16 @@ bool _isWinningPlacement(
   int col,
   PlayerMark mark,
   int winLength,
+  Ruleset ruleset,
 ) {
-  return _withMark(board, row, col, mark, () => _formsWin(board, row, col, mark, winLength));
+  if (!_isLegalAiMove(board, row, col, mark, ruleset)) return false;
+  return _withMark(
+    board,
+    row,
+    col,
+    mark,
+    () => _formsWin(board, row, col, mark, winLength, ruleset: ruleset),
+  );
 }
 
 List<_Cell> _winningPlacements(
@@ -214,10 +259,11 @@ List<_Cell> _winningPlacements(
   List<_Cell> candidates,
   PlayerMark mark,
   int winLength,
+  Ruleset ruleset,
 ) {
   return [
     for (final (row, col) in candidates)
-      if (_isWinningPlacement(board, row, col, mark, winLength)) (row, col),
+      if (_isWinningPlacement(board, row, col, mark, winLength, ruleset)) (row, col),
   ];
 }
 
@@ -228,9 +274,10 @@ int _immediateWinCountNear(
   int focusCol,
   PlayerMark player,
   int winLength,
+  Ruleset ruleset,
 ) {
   final nearby = _emptiesNear(board, focusRow, focusCol, winLength, includeCenter: true);
-  return _winningPlacements(board, nearby, player, winLength).length;
+  return _winningPlacements(board, nearby, player, winLength, ruleset).length;
 }
 
 // --- Open runs / threats -----------------------------------------------------
@@ -302,13 +349,17 @@ _OpenThreats _countOpenThreats(
 }
 
 /// Open four, dual open threes, dual immediate wins, or must-block + leftover open three.
-bool _hasDoubleThreat(List<List<PlayerMark?>> board, int winLength, PlayerMark player) {
+bool _hasDoubleThreat(
+  List<List<PlayerMark?>> board,
+  int winLength,
+  PlayerMark player,
+  Ruleset ruleset,
+) {
   final threats = _countOpenThreats(board, winLength, player);
   if (threats.openFours >= 1 || threats.openThrees >= 2) return true;
 
-  // Immediate wins must go through existing stones; candidate neighborhood is enough.
-  final pool = _movePool(board, winLength);
-  final immediate = _winningPlacements(board, pool, player, winLength);
+  final pool = _legalPool(board, winLength, ruleset, player);
+  final immediate = _winningPlacements(board, pool, player, winLength, ruleset);
   return immediate.length >= 2 || (immediate.isNotEmpty && threats.openThrees >= 1);
 }
 
@@ -318,11 +369,18 @@ List<_Cell> _doubleThreatPoints(
   List<_Cell> pool,
   int winLength,
   PlayerMark player,
+  Ruleset ruleset,
 ) {
   return [
     for (final (row, col) in pool)
       if (board[row][col] == null)
-        if (_withMark(board, row, col, player, () => _hasDoubleThreat(board, winLength, player)))
+        if (_withMark(
+          board,
+          row,
+          col,
+          player,
+          () => _hasDoubleThreat(board, winLength, player, ruleset),
+        ))
           (row, col),
   ];
 }
@@ -388,6 +446,7 @@ int _moveRank(
   int col,
   int winLength,
   PlayerMark toMove,
+  Ruleset ruleset,
 ) {
   final base =
       _segmentCountForPlayer(board, row, col, winLength, .x) +
@@ -395,13 +454,20 @@ int _moveRank(
 
   final attackBonus = _withMark(board, row, col, toMove, () {
     final threats = _countOpenThreats(board, winLength, toMove);
-    final immediate = _immediateWinCountNear(board, row, col, toMove, winLength);
+    final immediate = _immediateWinCountNear(board, row, col, toMove, winLength, ruleset);
     return _threatBonus(threats, openFour: 500, openThree: 50) + immediate * 300;
   });
 
   final denyBonus = _withMark(board, row, col, toMove.opponent, () {
     final threats = _countOpenThreats(board, winLength, toMove.opponent);
-    final immediate = _immediateWinCountNear(board, row, col, toMove.opponent, winLength);
+    final immediate = _immediateWinCountNear(
+      board,
+      row,
+      col,
+      toMove.opponent,
+      winLength,
+      ruleset,
+    );
     return _threatBonus(threats, openFour: 400, openThree: 40) + immediate * 250;
   });
 
@@ -412,13 +478,14 @@ List<_Cell> _highestRankedMoves(
   List<List<PlayerMark?>> board,
   List<_Cell> candidates,
   int winLength,
+  Ruleset ruleset,
 ) {
   if (candidates.isEmpty) return const [];
   final toMove = _sideToMove(board);
   var bestRank = -1;
   final best = <_Cell>[];
   for (final (row, col) in candidates) {
-    final rank = _moveRank(board, row, col, winLength, toMove);
+    final rank = _moveRank(board, row, col, winLength, toMove, ruleset);
     if (rank > bestRank) {
       bestRank = rank;
       best
@@ -437,76 +504,94 @@ List<_Cell>? _rankedIfAny(
   List<_Cell> pool,
   Iterable<_Cell> preferred,
   int winLength,
+  Ruleset ruleset,
 ) {
   final filtered = [
     for (final move in pool)
       if (preferred.contains(move)) move,
   ];
   if (filtered.isEmpty) return null;
-  return _highestRankedMoves(board, filtered, winLength);
+  return _highestRankedMoves(board, filtered, winLength, ruleset);
 }
 
 // --- Hard policy -------------------------------------------------------------
 
-List<_Cell> _hardMoveOptions(List<List<PlayerMark?>> board, int winLength) {
+List<_Cell> _hardMoveOptions(List<List<PlayerMark?>> board, int winLength, Ruleset ruleset) {
   if (_boardIsEmpty(board)) return [_centerMove(board)];
 
   final ai = _sideToMove(board);
-  final pool = _movePool(board, winLength);
-  if (pool.isEmpty) return const [];
+  final pool = _legalPool(board, winLength, ruleset, ai);
+  if (pool.isEmpty) {
+    // No legal moves (extreme renju edge case) — fall back to any empty.
+    return _allEmpty(board);
+  }
 
   final opponent = ai.opponent;
 
-  final wins = _winningPlacements(board, pool, ai, winLength);
+  final wins = _winningPlacements(board, pool, ai, winLength, ruleset);
   if (wins.isNotEmpty) return wins;
 
-  final blocks = _winningPlacements(board, pool, opponent, winLength);
-  if (blocks.isNotEmpty) return blocks;
+  // Opponent blocks ignore our fouls; they may play any empty cell that wins for them.
+  final blockPool = _movePool(board, winLength);
+  final blocks = _winningPlacements(board, blockPool, opponent, winLength, ruleset);
+  if (blocks.isNotEmpty) {
+    // Prefer legal blocks for us; any block cell is fine if we are white.
+    final legalBlocks = [
+      for (final m in blocks)
+        if (_isLegalAiMove(board, m.$1, m.$2, ai, ruleset)) m,
+    ];
+    return legalBlocks.isNotEmpty ? legalBlocks : blocks;
+  }
 
   // Defend before inventing attacks: an ignored open three is usually a loss.
   if (_markCount(board, opponent) >= 2) {
-    final defending = _doubleThreatPoints(board, pool, winLength, opponent);
-    if (defending.isNotEmpty) return _highestRankedMoves(board, defending, winLength);
+    final defending = _doubleThreatPoints(board, pool, winLength, opponent, ruleset);
+    if (defending.isNotEmpty) return _highestRankedMoves(board, defending, winLength, ruleset);
 
     final openThreeEnds = _openRunEnds(board, winLength - 2, onlyMark: opponent);
-    final urgent = _rankedIfAny(board, pool, openThreeEnds, winLength);
+    final urgent = _rankedIfAny(board, pool, openThreeEnds, winLength, ruleset);
     if (urgent != null) return urgent;
   }
 
   if (_markCount(board, ai) >= 2) {
-    final attacking = _doubleThreatPoints(board, pool, winLength, ai);
-    if (attacking.isNotEmpty) return _highestRankedMoves(board, attacking, winLength);
+    final attacking = _doubleThreatPoints(board, pool, winLength, ai, ruleset);
+    if (attacking.isNotEmpty) return _highestRankedMoves(board, attacking, winLength, ruleset);
   }
 
   // Fall back: any open-three ends, else full candidate ranking.
   final anyOpenEnds = _openRunEnds(board, winLength - 2);
-  final narrowed = _rankedIfAny(board, pool, anyOpenEnds, winLength);
-  return narrowed ?? _highestRankedMoves(board, pool, winLength);
+  final narrowed = _rankedIfAny(board, pool, anyOpenEnds, winLength, ruleset);
+  return narrowed ?? _highestRankedMoves(board, pool, winLength, ruleset);
 }
 
 // --- Difficulty entry points -------------------------------------------------
 
 _Cell _aiEasy(_AiInput input) {
-  final (:board, :winLength) = input;
+  final (:board, :winLength, :ruleset) = input;
   if (_boardIsEmpty(board)) return _centerMove(board);
 
   final ai = _sideToMove(board);
-  final pool = _movePool(board, winLength);
+  final pool = _legalPool(board, winLength, ruleset, ai);
   assert(pool.isNotEmpty, 'AI called on a full board');
 
-  final wins = _winningPlacements(board, pool, ai, winLength);
+  final wins = _winningPlacements(board, pool, ai, winLength, ruleset);
   if (wins.isNotEmpty) return wins.random;
 
-  final blocks = _winningPlacements(board, pool, ai.opponent, winLength);
+  final blocks = _winningPlacements(board, _movePool(board, winLength), ai.opponent, winLength, ruleset);
+  final legalBlocks = [
+    for (final m in blocks)
+      if (_isLegalAiMove(board, m.$1, m.$2, ai, ruleset)) m,
+  ];
+  if (legalBlocks.isNotEmpty) return legalBlocks.random;
   if (blocks.isNotEmpty) return blocks.random;
 
   return pool.random;
 }
 
 _Cell _aiHard(_AiInput input) {
-  final (:board, :winLength) = input;
+  final (:board, :winLength, :ruleset) = input;
   if (_boardIsEmpty(board)) return _centerMove(board);
-  final options = _hardMoveOptions(board, winLength);
+  final options = _hardMoveOptions(board, winLength, ruleset);
   assert(options.isNotEmpty, 'AI called on a full board');
   return options.random;
 }
@@ -565,12 +650,12 @@ bool _movesAreSymmetricallyEquivalent(List<List<PlayerMark?>> board, List<_Cell>
   return orbit.length == moveSet.length;
 }
 
-PlayerMark? _findWinner(List<List<PlayerMark?>> board, int winLength) {
+PlayerMark? _findWinner(List<List<PlayerMark?>> board, int winLength, Ruleset ruleset) {
   for (var row = 0; row < board.length; row++) {
     for (var col = 0; col < board[row].length; col++) {
       final mark = board[row][col];
       if (mark == null) continue;
-      if (_formsWin(board, row, col, mark, winLength)) return mark;
+      if (_formsWin(board, row, col, mark, winLength, ruleset: ruleset)) return mark;
     }
   }
   return null;
@@ -600,15 +685,16 @@ int _brutalEvaluate(
   int winLength,
   PlayerMark rootAi,
   int depthRemaining,
+  Ruleset ruleset,
 ) {
-  if (_findWinner(board, winLength) case final winner?) {
+  if (_findWinner(board, winLength, ruleset) case final winner?) {
     return winner == rootAi ? 1000 : -1000;
   }
   if (_boardIsFull(board)) return 0;
   if (depthRemaining <= 0) return _brutalHeuristic(board, winLength, rootAi);
 
   final toMove = _sideToMove(board);
-  final options = _hardMoveOptions(board, winLength);
+  final options = _hardMoveOptions(board, winLength, ruleset);
   if (options.isEmpty) return 0;
 
   final maximizing = toMove == rootAi;
@@ -619,7 +705,7 @@ int _brutalEvaluate(
       row,
       col,
       toMove,
-      () => _brutalEvaluate(board, winLength, rootAi, depthRemaining - 1),
+      () => _brutalEvaluate(board, winLength, rootAi, depthRemaining - 1, ruleset),
     );
     if (maximizing) {
       if (score > best) best = score;
@@ -633,10 +719,10 @@ int _brutalEvaluate(
 }
 
 _Cell _aiBrutal(_AiInput input) {
-  final (:board, :winLength) = input;
+  final (:board, :winLength, :ruleset) = input;
   if (_boardIsEmpty(board)) return _centerMove(board);
 
-  final options = _hardMoveOptions(board, winLength);
+  final options = _hardMoveOptions(board, winLength, ruleset);
   assert(options.isNotEmpty, 'AI called on a full board');
   if (options.length == 1 || _movesAreSymmetricallyEquivalent(board, options)) {
     return options.random;
@@ -652,7 +738,7 @@ _Cell _aiBrutal(_AiInput input) {
       row,
       col,
       ai,
-      () => _brutalEvaluate(board, winLength, ai, depth),
+      () => _brutalEvaluate(board, winLength, ai, depth, ruleset),
     );
     if (score > bestScore) {
       bestScore = score;
