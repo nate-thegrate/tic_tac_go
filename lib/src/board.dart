@@ -13,6 +13,13 @@ enum PlayerMark {
   x,
   o;
 
+  /// The user's selection for turn order in 1-player games.
+  ///
+  /// - `x`: The user goes first, playing as "X" or black.
+  /// - `o`: The AI goes first; the user plays as "O" or white.
+  /// - `null`: Random player order.
+  static final userSelection = Get.it<PlayerMark?>(null);
+
   PlayerMark get opponent => switch (this) {
     x => .o,
     o => .x,
@@ -705,7 +712,7 @@ class _RenderOutlinedText extends RenderBox {
       text: TextSpan(
         text: _label,
         style: TextStyle(
-          fontFamily: 'permanent marker',
+          fontFamily: Font.permanentMarker,
           fontSize: _fontSize,
           foreground: Paint()
             ..style = .stroke
@@ -728,7 +735,11 @@ class _RenderOutlinedText extends RenderBox {
     _fill = TextPainter(
       text: TextSpan(
         text: _label,
-        style: TextStyle(fontFamily: 'permanent marker', fontSize: _fontSize, color: Colors.black),
+        style: TextStyle(
+          fontFamily: Font.permanentMarker,
+          fontSize: _fontSize,
+          color: Colors.black,
+        ),
       ),
       textAlign: .center,
       textDirection: .ltr,

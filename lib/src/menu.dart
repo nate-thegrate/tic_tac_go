@@ -30,6 +30,57 @@ class MainContent extends StatelessWidget {
   }
 }
 
+class _MainContentLayout extends RefLayout {
+  const _MainContentLayout({required this.board, required this.menu, required this.bottomBar});
+
+  final Widget board;
+  final Widget menu;
+  final Widget bottomBar;
+
+  @override
+  RefLayoutState<_MainContentLayout> createState() => _MainContentLayoutState();
+}
+
+class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
+  late final board = delegate((widget) => widget.board);
+  late final menu = delegate((widget) => widget.menu);
+  late final bottomBar = delegate((widget) => widget.bottomBar);
+
+  @override
+  void performLayout(LayoutRef ref) {
+    final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
+    const sizeAdjustment = Offset(0, BottomBar.height);
+
+    var menuSize = (ref.constraints.biggest - sizeAdjustment) as Size;
+    final contentConstraints = BoxConstraints.loose(menuSize);
+
+    final extraHeight = menuSize.height - menuSize.width;
+    const minWidth = 900.0;
+    const minExtraHeight = -400.0;
+    const maxExtraHeight = 300.0;
+    if (extraHeight > maxExtraHeight) {
+      menuSize = Size(menuSize.width, menuSize.width + maxExtraHeight);
+    } else if (extraHeight < minExtraHeight) {
+      menuSize = Size(math.max(menuSize.height - minExtraHeight, minWidth), menuSize.height);
+    }
+
+    final boardSize = board.layout(constraints: contentConstraints);
+    var Size(:width, :height) = Size.lerp(menuSize, boardSize, t)! + sizeAdjustment;
+    width = math.max(width, BottomBar.minWidth);
+    ref.size = Size(width, height);
+
+    bottomBar.layoutAlign(.bottomCenter, size: Size(width, BottomBar.height));
+    menu.layoutRect(
+      Offset(-menuSize.width, (boardSize.height - menuSize.height) / 2) * t & menuSize,
+    );
+    board.offset = Offset(
+      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t) +
+          (width - boardSize.width) * t / 2,
+      (menuSize.height - boardSize.height) / 2 * (1 - t),
+    );
+  }
+}
+
 class BottomBar extends StatelessWidget {
   const BottomBar({super.key});
 
@@ -164,13 +215,13 @@ class BottomBar extends StatelessWidget {
                 textSpan = switch (menuPage) {
                   .players || .boardSize => const TextSpan(text: 'NEXT'),
                   .rules => const TextSpan(
-                    text: 'Play  ',
+                    text: 'PLAY  ',
                     children: [
                       WidgetSpan(
                         alignment: .middle,
                         child: SizedBox(
-                          width: 12 * root3over2,
-                          height: 12,
+                          width: 16 * root3over2,
+                          height: 16,
                           child: RefPaint(_playArrow),
                         ),
                       ),
@@ -189,11 +240,7 @@ class BottomBar extends StatelessWidget {
 
               return Text.rich(
                 textSpan,
-                style: TextStyle(
-                  fontFamily: 'permanent marker',
-                  fontSize: 24,
-                  color: Color.from(alpha: (2 * t - 1).abs(), red: 0, green: 0, blue: 0),
-                ),
+                style: TextStyle(fontSize: 24, color: Black((2 * t - 1).abs())),
                 textAlign: .center,
               );
             }),
@@ -262,45 +309,6 @@ class BottomBar extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _MainContentLayout extends RefLayout {
-  const _MainContentLayout({required this.board, required this.menu, required this.bottomBar});
-
-  final Widget board;
-  final Widget menu;
-  final Widget bottomBar;
-
-  @override
-  RefLayoutState<_MainContentLayout> createState() => _MainContentLayoutState();
-}
-
-class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
-  late final board = delegate((widget) => widget.board);
-  late final menu = delegate((widget) => widget.menu);
-  late final bottomBar = delegate((widget) => widget.bottomBar);
-
-  @override
-  void performLayout(LayoutRef ref) {
-    final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
-    const sizeAdjustment = Offset(0, BottomBar.height);
-    final contentConstraints = BoxConstraints.loose(
-      (ref.constraints.biggest - sizeAdjustment) as Size,
-    );
-    final menuSize = menu.layout(constraints: contentConstraints);
-    final boardSize = board.layout(constraints: contentConstraints);
-    var Size(:width, :height) = Size.lerp(menuSize, boardSize, t)! + sizeAdjustment;
-    width = math.max(width, BottomBar.minWidth);
-    ref.size = Size(width, height);
-
-    bottomBar.layoutAlign(.bottomCenter, size: Size(width, BottomBar.height));
-    menu.offset = Offset(-menuSize.width, (boardSize.height - menuSize.height) / 2) * t;
-    board.offset = Offset(
-      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t) +
-          (width - boardSize.width) * t / 2,
-      (menuSize.height - boardSize.height) / 2 * (1 - t),
     );
   }
 }
@@ -431,7 +439,7 @@ class Menu extends RefWidget {
           TextSpan(text: '$rows'),
         ],
       ),
-      style: TextStyle(fontFamily: 'patrick hand', fontWeight: .w600, fontSize: 18),
+      style: TextStyle(fontFamily: Font.patrickHand, fontWeight: .w600, fontSize: 18),
     );
   }
 
@@ -440,56 +448,63 @@ class Menu extends RefWidget {
     required bool selected,
     required VoidCallback onSelect,
   }) {
-    return Expanded(
-      child: GestureDetector(
-        behavior: .opaque,
-        onPanDown: (_) => onSelect(),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Black(selected ? 0 : 0.1),
-            border: selected
-                ? BoxBorder.symmetric(horizontal: BorderSide(color: Black(0.1), width: 4))
-                : null,
-          ),
-          child: Padding(
-            padding: const .symmetric(vertical: 8.0),
-            child: Center(
-              child: Text(
-                label.toUpperCase(),
-                style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
-              ),
-            ),
-          ),
+    return GestureDetector(
+      behavior: .opaque,
+      onPanDown: (_) => onSelect(),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Black(selected ? 0 : 0.1),
+          border: selected
+              ? BoxBorder.symmetric(horizontal: BorderSide(color: Black(0.1), width: 4))
+              : null,
+        ),
+        child: Padding(
+          padding: const .symmetric(vertical: 32),
+          child: Center(child: Text(label.toUpperCase())),
         ),
       ),
     );
   }
 
-  static Widget _radioOption({
-    required String label,
-    required bool selected,
-    required VoidCallback onSelect,
+  static Widget _radioGroup<T>({
+    required String title,
+    required Iterable<T> values,
+    required String Function(T value) labelOf,
+    required bool Function(T value) isSelected,
+    required ValueChanged<T> onSelect,
   }) {
-    return GestureDetector(
-      behavior: .opaque,
-      onPanDown: (_) => onSelect(),
-      child: Row(
-        mainAxisSize: .min,
-        spacing: 14,
-        children: [
-          SizedBox.square(
-            dimension: 15,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: .circle,
-                color: selected ? Colors.black : null,
-                border: .all(color: const Black(), width: 2),
-              ),
+    return Column(
+      mainAxisSize: .min,
+      crossAxisAlignment: .start,
+      children: [
+        SizedBox(width: 185, child: Text(title, style: const TextStyle(fontSize: 30))),
+        const SizedBox(height: 6),
+        for (final value in values)
+          GestureDetector(
+            behavior: .opaque,
+            onPanDown: (_) => onSelect(value),
+            child: Row(
+              mainAxisSize: .min,
+              spacing: 14,
+              children: [
+                SizedBox.square(
+                  dimension: 15,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: .circle,
+                      color: isSelected(value) ? Colors.black : null,
+                      border: .all(color: const Black(), width: 2),
+                    ),
+                  ),
+                ),
+                Text(
+                  labelOf(value),
+                  style: const TextStyle(fontFamily: Font.patrickHand, fontSize: 22),
+                ),
+              ],
             ),
           ),
-          Text(label, style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22)),
-        ],
-      ),
+      ],
     );
   }
 
@@ -499,41 +514,62 @@ class Menu extends RefWidget {
     return Column(
       spacing: 4,
       children: [
-        Spacer(),
-        Row(
-          children: [
-            _option(
-              label: '1 player',
-              selected: !isTwoPlayer,
-              onSelect: () => twoPlayer.value = false,
-            ),
-            _option(
-              label: '2 players',
-              selected: isTwoPlayer,
-              onSelect: () => twoPlayer.value = true,
-            ),
-          ],
-        ),
         if (!isTwoPlayer)
           Expanded(
             child: Align(
-              alignment: .xy(0, -0.75),
-              child: Column(
-                mainAxisSize: .min,
-                crossAxisAlignment: .start,
+              alignment: .xy(0, -0.5),
+              child: Row(
                 children: [
-                  for (final level in Difficulty.values)
-                    _radioOption(
-                      label: level.name.toUpperCase(),
-                      selected: difficulty == level,
-                      onSelect: () => Difficulty.selected.value = level,
+                  Expanded(
+                    child: Center(
+                      child: RefBuilder((context) {
+                        final selection = ref.watch(PlayerMark.userSelection);
+                        final isGoMode = ref.watch(goMode);
+                        return _radioGroup(
+                          title: 'PLAY AS',
+                          values: const [...PlayerMark.values, null],
+                          labelOf: (option) => option?.toString(goMode: isGoMode) ?? 'Random',
+                          isSelected: (option) => selection == option,
+                          onSelect: (option) => PlayerMark.userSelection.value = option,
+                        );
+                      }),
                     ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: _radioGroup(
+                        title: 'DIFFICULTY',
+                        values: Difficulty.values,
+                        labelOf: (level) => level.toString(),
+                        isSelected: (level) => difficulty == level,
+                        onSelect: (level) => Difficulty.selected.value = level,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           )
         else
           Spacer(),
+        Row(
+          children: [
+            Expanded(
+              child: _option(
+                label: '1 player',
+                selected: !isTwoPlayer,
+                onSelect: () => twoPlayer.value = false,
+              ),
+            ),
+            Expanded(
+              child: _option(
+                label: '2 players',
+                selected: isTwoPlayer,
+                onSelect: () => twoPlayer.value = true,
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -551,18 +587,24 @@ class Menu extends RefWidget {
             widthFactor: 0.95,
             child: Align(
               alignment: const .xy(-1, 1 / 3),
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: selected.label.toUpperCase(),
-                      style: TextStyle(fontFamily: 'permanent marker', fontSize: 32),
-                    ),
-                    TextSpan(
-                      text: '\n\n${selected.description}',
-                      style: TextStyle(fontFamily: 'patrick hand', fontSize: 22),
-                    ),
-                  ],
+              child: SingleChildScrollView(
+                child: DefaultTextStyle(
+                  style: const TextStyle(
+                    fontFamily: Font.patrickHand,
+                    fontSize: 22,
+                    color: Black(),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: .stretch,
+                    spacing: 12,
+                    children: [
+                      Text(
+                        selected.label.toUpperCase(),
+                        style: const TextStyle(fontFamily: Font.permanentMarker, fontSize: 32),
+                      ),
+                      ...selected.description,
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -579,12 +621,7 @@ class Menu extends RefWidget {
                     : BoxDecoration(color: Black(0.1)),
                 child: Padding(
                   padding: const .symmetric(vertical: 8.0),
-                  child: Center(
-                    child: Text.rich(
-                      TextSpan(text: label.toUpperCase()),
-                      style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
-                    ),
-                  ),
+                  child: Center(child: Text.rich(TextSpan(text: label.toUpperCase()))),
                 ),
               ),
             ),
@@ -598,7 +635,7 @@ class Menu extends RefWidget {
     final Widget contents = switch (currentPage) {
       .players => RefBuilder(_players),
       .boardSize => const Column(
-        mainAxisSize: .min,
+        mainAxisAlignment: .center,
         children: [
           Flexible(
             child: AspectRatio(
@@ -634,7 +671,7 @@ class Menu extends RefWidget {
                         child: Center(
                           child: Text(
                             page.label.toUpperCase(),
-                            style: const TextStyle(fontFamily: 'permanent marker', fontSize: 18),
+                            style: const TextStyle(fontSize: 18),
                           ),
                         ),
                       ),

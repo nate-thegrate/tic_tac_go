@@ -43,6 +43,9 @@ enum Difficulty {
       brutal => compute(_aiBrutal, input),
     };
   }
+
+  @override
+  String toString() => name[0].toUpperCase() + name.substring(1);
 }
 
 extension<T> on List<T> {
