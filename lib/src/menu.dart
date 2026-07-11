@@ -6,6 +6,7 @@ import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
+import 'package:tic_tac_go/src/swap2.dart';
 
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
@@ -188,7 +189,12 @@ class BottomBar extends StatelessWidget {
           child: GestureDetector(
             behavior: .opaque,
             onPanDown: (details) {
-              if (playing.value) return;
+              if (playing.value) {
+                if (Swap2.isChoosing) {
+                  Swap2.toggleOptionsView();
+                }
+                return;
+              }
 
               switch (MenuPage.current.value) {
                 case .players:
@@ -209,10 +215,13 @@ class BottomBar extends StatelessWidget {
               );
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
-              final playerText = (winner ?? player).toString(goMode: ref.watch(goMode));
+              final isGoMode = ref.watch(goMode);
+              final playerText = (winner ?? player).toString(goMode: isGoMode);
               final human = ref.watch(Board.humanPlayer);
               // Still "YOUR MOVE" during the human's placement animation (turn has not switched yet).
               final usersTurn = human != null && player == human;
+              final swap2Phase = ref.watch(Swap2.phase);
+              final swap2OptionsVisible = ref.watch(Swap2.optionsVisible);
 
               final TextSpan textSpan;
               if (t < 0.5) {
@@ -232,6 +241,15 @@ class BottomBar extends StatelessWidget {
                     ],
                   ),
                 };
+              } else if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
+                textSpan = TextSpan(
+                  text: swap2OptionsVisible ? 'VIEW BOARD' : 'VIEW OPTIONS',
+                );
+              } else if (swap2Phase == .opening3 || swap2Phase == .extra2) {
+                final total = swap2Phase == .extra2 ? 2 : 3;
+                final done = ref.watch(Swap2.placedInPhase);
+                final mark = player.toString(goMode: isGoMode);
+                textSpan = TextSpan(text: 'PLACE $mark · ${done + 1}/$total');
               } else {
                 textSpan = TextSpan(
                   text: winner != null

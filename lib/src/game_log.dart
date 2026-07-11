@@ -66,6 +66,11 @@ void startGame({
   _emittedForCurrentGame = false;
 }
 
+/// Call after swap2 (or similar) reassigns who plays which color.
+void setHuman(PlayerMark? human) {
+  _human = human;
+}
+
 void recordMove({
   required int row,
   required int col,
@@ -101,6 +106,18 @@ void maybeEmitBrutalLoss({
   if (_difficulty != Difficulty.brutal) return;
   final human = _human;
   if (human == null || winner != human) return;
+
+  // Guard against stale side assignment (e.g. swap2 color choice not reflected):
+  // the winner's stones should mostly have been placed by the human.
+  final winnerPlacedByHuman = moves.where((m) => m.mark == winner && !m.byAi).length;
+  final winnerPlacedByAi = moves.where((m) => m.mark == winner && m.byAi).length;
+  if (winnerPlacedByHuman == 0 || winnerPlacedByHuman < winnerPlacedByAi) {
+    debugPrint(
+      'game_log: skip brutal_loss (human=$human winner=$winner '
+      'humanStones=$winnerPlacedByHuman aiStones=$winnerPlacedByAi)',
+    );
+    return;
+  }
 
   _emittedForCurrentGame = true;
   final payload = <String, Object?>{

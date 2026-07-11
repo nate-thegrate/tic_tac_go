@@ -10,6 +10,7 @@ import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
 import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/menu.dart';
+import 'package:tic_tac_go/src/swap2.dart';
 
 enum PlayerMark {
   x,
@@ -251,17 +252,17 @@ class Board extends StatelessWidget {
   static void _assignSides() {
     if (twoPlayer.value) {
       humanPlayer.value = null;
+      Swap2.firstPlayerIsHuman = true;
     } else {
       humanPlayer.value = PlayerMark.userSelection.value ?? (math.Random().nextBool() ? .x : .o);
+      // First player places the swap2 opening; human is first iff they play black initially.
+      Swap2.firstPlayerIsHuman = humanPlayer.value == .x;
     }
     turn.value = .x;
   }
 
   static void undo([_]) {
-    if (inputLocked || history.isEmpty) return;
-
-    // After an AI move it's the human's turn, so the last history entry is the AI's.
-    final undoAiAndUser = humanPlayer.value != null && turn.value == humanPlayer.value;
+    if (inputLocked || history.isEmpty || Swap2.isChoosing) return;
 
     void undoOnce() {
       if (history.isEmpty) return;
@@ -271,6 +272,13 @@ class Board extends StatelessWidget {
       game_log.undoLast();
     }
 
+    if (Swap2.isPlacing) {
+      Swap2.undoPlacementStone(undoOnce);
+      return;
+    }
+
+    // After an AI move it's the human's turn, so the last history entry is the AI's.
+    final undoAiAndUser = humanPlayer.value != null && turn.value == humanPlayer.value;
     undoOnce();
     if (undoAiAndUser && history.isNotEmpty) undoOnce();
   }
@@ -283,7 +291,7 @@ class Board extends StatelessWidget {
     );
   }
 
-  static Future<void> _runGameEndSequence(Ruleset ruleset) async {
+  static Future<void> runGameEndSequence(Ruleset ruleset) async {
     _emitGameOverIfNeeded(ruleset);
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     if (state.value.isGameOver(ruleset) && GameEnd.opacity.value == 0) {
@@ -291,7 +299,7 @@ class Board extends StatelessWidget {
     }
   }
 
-  static Future<void> _animatePlacement() async {
+  static Future<void> animatePlacement() async {
     playerMarkAnimation.duration = goMode.value
         ? const Duration(milliseconds: 325)
         : const Duration(milliseconds: 225);
@@ -299,7 +307,7 @@ class Board extends StatelessWidget {
   }
 
   /// Places [mark] at [row],[col], updates history, and returns whether the game ended.
-  static bool _commitMark(
+  static bool commitMark(
     int row,
     int col,
     PlayerMark mark,
@@ -319,12 +327,23 @@ class Board extends StatelessWidget {
     final difficulty = Difficulty.selected.value;
     final (row, col) = await difficulty.aiMove(ruleset, state.value);
     final aiMark = turn.value;
-    final gameOver = _commitMark(row, col, aiMark, ruleset, byAi: true);
-    await _animatePlacement();
+    final gameOver = commitMark(row, col, aiMark, ruleset, byAi: true);
+    await animatePlacement();
     if (gameOver) {
-      await _runGameEndSequence(ruleset);
+      await runGameEndSequence(ruleset);
     } else {
       turn.value = aiMark.opponent;
+    }
+  }
+
+  static Future<void> maybeAiTurn(Ruleset ruleset) async {
+    final human = humanPlayer.value;
+    if (human == null || turn.value == human || state.value.isGameOver(ruleset)) return;
+    inputLocked = true;
+    try {
+      await _playAiMove(ruleset);
+    } finally {
+      inputLocked = false;
     }
   }
 
@@ -339,41 +358,34 @@ class Board extends StatelessWidget {
     );
   }
 
-  /// Resolves sides and starts the game (including an opening AI move when needed).
-  static Future<void> beginGame() async {
+  static Future<void> _startPlay() async {
     GameEnd.opacity.reset();
     state.clear();
     history.clear();
     currentMark = null;
     _assignSides();
     _startLoggedGame();
-    if (humanPlayer.value == .o) {
-      inputLocked = true;
-      try {
-        await _playAiMove(Ruleset.current.value);
-      } finally {
-        inputLocked = false;
+    Swap2.beginIfNeeded();
+
+    if (Swap2.phase.value == .opening3) {
+      turn.value = Swap2.nextMark;
+      final humanPlacesOpening = humanPlayer.value == null || Swap2.firstPlayerIsHuman;
+      if (!humanPlacesOpening) {
+        await Swap2.runAiPlacement();
       }
+      return;
+    }
+
+    if (humanPlayer.value == .o) {
+      await maybeAiTurn(Ruleset.current.value);
     }
   }
 
+  /// Resolves sides and starts the game (including an opening AI move when needed).
+  static Future<void> beginGame() => _startPlay();
+
   /// Clears the board and starts a new game without leaving play mode.
-  static Future<void> playAgain([_]) async {
-    GameEnd.opacity.reset();
-    state.clear();
-    history.clear();
-    currentMark = null;
-    _assignSides();
-    _startLoggedGame();
-    if (humanPlayer.value == .o) {
-      inputLocked = true;
-      try {
-        await _playAiMove(Ruleset.current.value);
-      } finally {
-        inputLocked = false;
-      }
-    }
-  }
+  static Future<void> playAgain([_]) => _startPlay();
 
   /// Leaves play mode and returns to the setup menu.
   static void backToMenu([_]) async {
@@ -385,6 +397,7 @@ class Board extends StatelessWidget {
     humanPlayer.value = null;
     inputLocked = false;
     currentMark = null;
+    Swap2.reset();
     game_log.clear();
   }
 
@@ -694,13 +707,26 @@ class Board extends StatelessWidget {
           onPanDown: (details) async {
             if (inputLocked || playerMarkAnimation.isActive) return;
             final ruleset = Ruleset.current.value;
+
+            if (Swap2.isChoosing) {
+              if (!Swap2.optionsVisible.value) {
+                Swap2.toggleOptionsView();
+              }
+              return;
+            }
+
             if (state.value.isGameOver(ruleset)) {
               GameEnd.opacity.jumpTo(1);
               return;
             }
+
             final human = humanPlayer.value;
             final isUsersTurn = human == null || turn.value == human;
-            if (!isUsersTurn) return;
+            if (Swap2.isPlacing) {
+              if (!Swap2.humanPlacesCurrentPhase) return;
+            } else if (!isUsersTurn) {
+              return;
+            }
 
             final box = context.findRenderObject()! as RenderBox;
             final Size(:width, :height) = box.size;
@@ -714,9 +740,14 @@ class Board extends StatelessWidget {
 
             inputLocked = true;
             try {
+              if (Swap2.isPlacing) {
+                await Swap2.placeHumanMark(down, across);
+                return;
+              }
+
               final userMark = turn.value;
-              final gameOver = _commitMark(down, across, userMark, ruleset, byAi: false);
-              final anim = _animatePlacement();
+              final gameOver = commitMark(down, across, userMark, ruleset, byAi: false);
+              final anim = animatePlacement();
 
               final difficulty = Difficulty.current.value;
               if (!gameOver && difficulty != null) {
@@ -726,17 +757,17 @@ class Board extends StatelessWidget {
                   difficulty.aiMove(ruleset, state.value),
                 ).wait;
                 turn.value = userMark.opponent;
-                final aiGameOver = _commitMark(aiRow, aiCol, turn.value, ruleset, byAi: true);
-                await _animatePlacement();
+                final aiGameOver = commitMark(aiRow, aiCol, turn.value, ruleset, byAi: true);
+                await animatePlacement();
                 if (aiGameOver) {
-                  await _runGameEndSequence(ruleset);
+                  await runGameEndSequence(ruleset);
                 } else {
                   turn.value = turn.value.opponent;
                 }
               } else {
                 await anim;
                 if (gameOver) {
-                  await _runGameEndSequence(ruleset);
+                  await runGameEndSequence(ruleset);
                 } else {
                   turn.value = userMark.opponent;
                 }
@@ -745,7 +776,13 @@ class Board extends StatelessWidget {
               inputLocked = false;
             }
           },
-          child: RefOpacity((ref) => 1 - ref.watch(GameEnd.opacity) / 2, child: RefPaint(paint)),
+          child: RefOpacity((ref) {
+            final swap2Choice =
+                ref.watch(Swap2.phase) == .chooseAfter3 || ref.watch(Swap2.phase) == .chooseAfter5;
+            final hideOverlay = swap2Choice && !ref.watch(Swap2.optionsVisible);
+            if (hideOverlay) return 1.0;
+            return 1 - ref.watch(GameEnd.opacity) / 2;
+          }, child: RefPaint(paint)),
         ),
         const Positioned.fill(child: GameEnd()),
       ],
@@ -763,10 +800,38 @@ class GameEnd extends RefWidget {
     Board.backToMenu();
   }
 
+  static String _colorLabel(PlayerMark mark, bool isGoMode) {
+    return mark.toString(goMode: isGoMode);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ruleset = ref.watch(Ruleset.current);
-    if (ref.select(Board.state, (data) => !data.isGameOver(ruleset))) {
+    final swap2Phase = ref.watch(Swap2.phase);
+    final swap2Visible = ref.watch(Swap2.optionsVisible);
+    final isGoMode = ref.watch(goMode);
+
+    final List<Widget> options;
+    if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
+      if (!swap2Visible) return const SizedBox.shrink();
+      options = [
+        _EndGameOption(
+          label: 'Play as ${_colorLabel(.o, isGoMode)}',
+          onSelect: () => Swap2.applyColorChoice(.o),
+        ),
+        _EndGameOption(
+          label: 'Play as ${_colorLabel(.x, isGoMode)}',
+          onSelect: () => Swap2.applyColorChoice(.x),
+        ),
+        if (swap2Phase == .chooseAfter3)
+          const _EndGameOption(label: 'Add 2 moves', onSelect: Swap2.applyAddTwoMoves),
+      ];
+    } else if (ref.select(Board.state, (data) => data.isGameOver(ruleset))) {
+      options = const [
+        _EndGameOption(label: 'Play again', onSelect: Board.playAgain),
+        _EndGameOption(label: 'Back to menu', onSelect: backToMenu),
+      ];
+    } else {
       return const SizedBox.shrink();
     }
 
@@ -776,13 +841,7 @@ class GameEnd extends RefWidget {
         (ref) => ref.watch(opacity) > 0.5,
         child: RefOpacity(
           (ref) => ref.watch(opacity),
-          child: const Column(
-            mainAxisSize: .min,
-            children: [
-              _EndGameOption(label: 'Play again', onSelect: Board.playAgain),
-              _EndGameOption(label: 'Back to menu', onSelect: backToMenu),
-            ],
-          ),
+          child: Column(mainAxisSize: .min, children: options),
         ),
       ),
     );
