@@ -76,54 +76,41 @@ Future<void> loadShaders() async {
 class App extends StatelessWidget {
   const App({super.key});
 
-  static Widget _buildGoBoard(BuildContext context) {
-    return GetScope(substitutes: {Substitution.value(goMode, true)}, child: const Backdrop());
-  }
-
-  static Widget _buildGoReveal(BuildContext context) {
-    const revealSoftness = 0.22;
+  static Shader _goReveal(ShaderRef ref) {
     final progress = ref.watch(goModeTransition);
+    const softness = 0.22;
+    final reveal = ui.lerpDouble(-softness, 1.0 + softness, progress)!;
+    final start = (reveal - softness).clamp(0.0, 1.0);
+    final end = (reveal + softness).clamp(0.0, 1.0);
 
-    return ShaderMask(
-      blendMode: .dstIn,
-      shaderCallback: (Rect bounds) {
-        final softness = revealSoftness;
-        final reveal = ui.lerpDouble(-softness, 1.0 + softness, progress)!;
-        final start = (reveal - softness).clamp(0.0, 1.0);
-        final end = (reveal + softness).clamp(0.0, 1.0);
-
-        final Gradient gradient;
-        if (start < end) {
-          gradient = LinearGradient(
-            begin: .centerLeft,
-            end: .centerRight,
-            colors: const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-            stops: [start, end],
-          );
-        } else {
-          gradient = LinearGradient(
-            colors: progress >= 0.5
-                ? const [Color(0xFFFFFFFF), Color(0xFFFFFFFF)]
-                : const [Color(0x00FFFFFF), Color(0x00FFFFFF)],
-          );
-        }
-        return gradient.createShader(bounds);
-      },
-      child: const Builder(builder: _buildGoBoard),
-    );
+    final Gradient gradient;
+    if (start < end) {
+      gradient = LinearGradient(
+        begin: .centerLeft,
+        end: .centerRight,
+        colors: const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+        stops: [start, end],
+      );
+    } else {
+      gradient = LinearGradient(
+        colors: progress >= 0.5
+            ? const [Color(0xFFFFFFFF), Color(0xFFFFFFFF)]
+            : const [Color(0x00FFFFFF), Color(0x00FFFFFF)],
+      );
+    }
+    return gradient.createShader(ref.bounds);
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        backgroundColor: Color(0xfff5c782),
         body: Stack(
           fit: .expand,
           children: [
-            GetScope(substitutes: {Substitution.value(goMode, false)}, child: const Backdrop()),
-            const RefBuilder(_buildGoReveal),
+            Backdrop(isGoMode: false),
+            RefShaderMask(_goReveal, blendMode: .dstIn, child: Backdrop(isGoMode: true)),
           ],
         ),
       ),
@@ -132,7 +119,9 @@ class App extends StatelessWidget {
 }
 
 class Backdrop extends StatelessWidget {
-  const Backdrop({super.key});
+  const Backdrop({super.key, required this.isGoMode});
+
+  final bool isGoMode;
 
   static late final ui.ImageShader woodShader;
   static const woodSize = Size(4824.0, 3216.0);
@@ -209,21 +198,24 @@ class Backdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RefPaint(
-      paintBackdrop,
-      child: LayoutBuilder(
-        builder: (context, constraints) => Padding(
-          padding: .all(constraints.biggest.shortestSide / 32),
-          child: const Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
-              ),
-              child: RepaintBoundary(
-                child: RefPaint(
-                  paint,
-                  expanded: false,
-                  child: ClipRect(clipper: _Clipper(), child: MainContent()),
+    return GetScope(
+      substitutes: {Substitution.value(goMode, isGoMode)},
+      child: RefPaint(
+        paintBackdrop,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Padding(
+            padding: .all(constraints.biggest.shortestSide / 32),
+            child: const Center(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)],
+                ),
+                child: RepaintBoundary(
+                  child: RefPaint(
+                    paint,
+                    expanded: false,
+                    child: ClipRect(clipper: _Clipper(), child: MainContent()),
+                  ),
                 ),
               ),
             ),

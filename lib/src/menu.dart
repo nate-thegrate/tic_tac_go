@@ -10,6 +10,31 @@ import 'package:tic_tac_go/src/difficulty.dart';
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
 
+  @override
+  Widget build(BuildContext context) {
+    return _MainContentLayout(
+      menu: Menu(),
+      board: RefAspectRatio(
+        (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Padding(
+              padding: .all(constraints.biggest.shortestSide / 32),
+              child: const Board(),
+            );
+          },
+        ),
+      ),
+      bottomBar: const BottomBar(),
+    );
+  }
+}
+
+class BottomBar extends StatelessWidget {
+  const BottomBar({super.key});
+
+  static const height = 48.0;
+
   static void _playArrow(PaintRef ref) {
     final PaintRef(:canvas, size: Size(:width, :height)) = ref;
     canvas.drawPath(
@@ -23,7 +48,7 @@ class MainContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomBar = Row(
+    return Row(
       mainAxisSize: .min,
       mainAxisAlignment: .center,
       children: [
@@ -33,7 +58,7 @@ class MainContent extends StatelessWidget {
             Board.reset();
           },
           child: SizedBox.square(
-            dimension: 48,
+            dimension: height,
             child: RefPaint((ref) {
               final PaintRef(:canvas, size: Size(:width, :height)) = ref;
               const strokeWidth = 5.0;
@@ -59,7 +84,7 @@ class MainContent extends StatelessWidget {
           behavior: .opaque,
           onPanDown: Board.undo,
           child: SizedBox.square(
-            dimension: 48,
+            dimension: height,
             child: RefPaint((ref) {
               final PaintRef(:canvas, :size) = ref;
               const strokeWidth = 5.0;
@@ -230,37 +255,15 @@ class MainContent extends StatelessWidget {
         ),
       ],
     );
-
-    return Column(
-      mainAxisSize: .min,
-      children: [
-        Flexible(
-          child: _MainContentLayout(
-            menu: Menu(),
-            board: RefAspectRatio(
-              (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Padding(
-                    padding: .all(constraints.biggest.shortestSide / 32),
-                    child: const Board(),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-        bottomBar,
-      ],
-    );
   }
 }
 
 class _MainContentLayout extends RefLayout {
-  const _MainContentLayout({required this.board, required this.menu});
+  const _MainContentLayout({required this.board, required this.menu, required this.bottomBar});
 
   final Widget board;
   final Widget menu;
+  final Widget bottomBar;
 
   @override
   RefLayoutState<_MainContentLayout> createState() => _MainContentLayoutState();
@@ -269,22 +272,30 @@ class _MainContentLayout extends RefLayout {
 class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
   late final board = delegate((widget) => widget.board);
   late final menu = delegate((widget) => widget.menu);
+  late final bottomBar = delegate((widget) => widget.bottomBar);
 
   @override
   void performLayout(LayoutRef ref) {
-    final maxSize = ref.constraints.biggest;
     final t = Curves.easeInOutCubic.transform(ref.watch(playingTransition));
-    final glowSpread = ref.select(Board.state, (data) {
-      return math.min(maxSize.width / data.cols, maxSize.height / data.rows) * 0.25;
-    });
-    menu.layoutRect(Offset.zero & maxSize);
-    final boardSize = board.layout();
-    menu.offset = Offset(-t * maxSize.width, (boardSize.height - maxSize.height) / 2 * t);
-    board.offset = Offset(
-      ((maxSize.width - boardSize.width) / 2 + maxSize.width + glowSpread) * (1 - t),
-      (maxSize.height - boardSize.height) / 2 * (1 - t),
+    // Menu expands to max height; reserve space so the bottom bar stays inside the paper.
+    final contentConstraints = BoxConstraints(
+      maxWidth: ref.constraints.maxWidth,
+      maxHeight: math.max(0.0, ref.constraints.maxHeight - BottomBar.height),
     );
-    ref.size = Size.lerp(maxSize, boardSize, t)!;
+    final menuSize = menu.layout(constraints: contentConstraints);
+    final boardSize = board.layout(constraints: contentConstraints);
+    menu.offset = Offset(-t * menuSize.width, (boardSize.height - menuSize.height) / 2 * t);
+    board.offset = Offset(
+      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t),
+      (menuSize.height - boardSize.height) / 2 * (1 - t),
+    );
+    const sizeAdjustment = Offset(0, BottomBar.height);
+    final totalSize = ref.size = Size.lerp(
+      menuSize + sizeAdjustment,
+      boardSize + sizeAdjustment,
+      t,
+    )!;
+    bottomBar.layoutAlign(.bottomCenter, size: Size(totalSize.width, BottomBar.height));
   }
 }
 
@@ -305,7 +316,7 @@ class Menu extends RefWidget {
   const Menu({super.key});
 
   static Widget _boardSize(BuildContext context) {
-    void handleGesture(PositionedGestureDetails details) async {
+    void updateBoardSize(PositionedGestureDetails details) async {
       final Offset(:dx, :dy) = details.localPosition;
       final Size(:width, :height) = context.size!;
       Board.state
@@ -314,8 +325,8 @@ class Menu extends RefWidget {
     }
 
     return GestureDetector(
-      onPanDown: handleGesture,
-      onPanUpdate: handleGesture,
+      onPanDown: updateBoardSize,
+      onPanUpdate: updateBoardSize,
       child: RefPaint((ref) {
         final PaintRef(:canvas, size: Size(:width, :height)) = ref;
         final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
@@ -389,7 +400,19 @@ class Menu extends RefWidget {
 
   static Widget _boardSizeLabel(BuildContext context) {
     final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
-    return Text('${cols}x$rows', style: TextStyle(fontWeight: .w600, fontSize: 16));
+    const tinySpace = TextSpan(text: ' ', style: TextStyle(fontSize: 4));
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '$cols'),
+          tinySpace,
+          TextSpan(text: 'x'),
+          tinySpace,
+          TextSpan(text: '$rows'),
+        ],
+      ),
+      style: TextStyle(fontFamily: 'patrick hand', fontWeight: .w600, fontSize: 18),
+    );
   }
 
   static Widget _option({
@@ -411,7 +434,10 @@ class Menu extends RefWidget {
           child: Padding(
             padding: const .symmetric(vertical: 8.0),
             child: Center(
-              child: Text(label.toUpperCase(), style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22)),
+              child: Text(
+                label.toUpperCase(),
+                style: const TextStyle(fontFamily: 'permanent marker', fontSize: 22),
+              ),
             ),
           ),
         ),
@@ -530,15 +556,25 @@ class Menu extends RefWidget {
   @override
   Widget build(BuildContext context) {
     final currentPage = ref.watch(MenuPage.current);
-    final List<Widget> contents = switch (currentPage) {
-      .players => const [Expanded(child: RefBuilder(_players))],
-      .boardSize => const [
-        Flexible(
-          child: AspectRatio(aspectRatio: 1, child: Builder(builder: _boardSize)),
-        ),
-        RefBuilder(_boardSizeLabel),
-      ],
-      .rules => const [Expanded(child: RefBuilder(_rules))],
+    final Widget contents = switch (currentPage) {
+      .players => const Expanded(child: RefBuilder(_players)),
+      .boardSize => const Column(
+        mainAxisSize: .min,
+        children: [
+          Flexible(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: FractionallySizedBox(
+                widthFactor: 0.96,
+                heightFactor: 0.96,
+                child: Builder(builder: _boardSize),
+              ),
+            ),
+          ),
+          RefBuilder(_boardSizeLabel),
+        ],
+      ),
+      .rules => const Expanded(child: RefBuilder(_rules)),
     };
     return Center(
       child: Column(
@@ -567,7 +603,7 @@ class Menu extends RefWidget {
                 ),
             ],
           ),
-          ...contents,
+          contents,
         ],
       ),
     );

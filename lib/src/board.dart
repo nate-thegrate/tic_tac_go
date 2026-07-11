@@ -314,15 +314,16 @@ class Board extends StatelessWidget {
 
   static void paint(PaintRef ref) {
     final board = ref.watch(state);
+    final ruleset = ref.watch(Ruleset.current);
     final t = ref.watch(playerMarkAnimation);
     final isGoMode = ref.watch(goMode);
+    final inMenu = ref.watch(playingTransition.status).isDismissed;
     final shouldSkipPaint = switch (ref.watch(goModeTransition.status)) {
       .completed => !isGoMode,
       .dismissed => isGoMode,
       .forward || .reverse => false,
     };
-    final ruleset = ref.watch(Ruleset.current);
-    if (shouldSkipPaint) return;
+    if (inMenu || shouldSkipPaint) return;
     if (playerMarkAnimation.isActive) ref.setWillChangeHint();
 
     final PaintRef(:canvas, :size) = ref;
@@ -724,11 +725,7 @@ class _RenderOutlinedText extends RenderBox {
     _fill = TextPainter(
       text: TextSpan(
         text: _label,
-        style: TextStyle(
-          fontFamily: 'permanent marker',
-          fontSize: _fontSize,
-          color: Colors.black,
-        ),
+        style: TextStyle(fontFamily: 'permanent marker', fontSize: _fontSize, color: Colors.black),
       ),
       textAlign: .center,
       textDirection: .ltr,
