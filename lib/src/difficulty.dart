@@ -8,6 +8,8 @@ import 'package:tic_tac_go/src/board.dart';
 final twoPlayer = Get.it(false);
 
 typedef _AiInput = ({List<List<PlayerMark?>> board, int winLength});
+typedef _Cell = (int row, int col);
+typedef _OpenThreats = ({int openFours, int openThrees});
 
 enum Difficulty {
   easy,
@@ -25,21 +27,11 @@ enum Difficulty {
     final input = (board: board, winLength: winLength);
 
     return switch (this) {
-      // If the AI can make a winning move, do it.
-      // If the AI can block an opponent's winning move, do it.
-      // Otherwise, move in a random spot.
-      // Return a SynchronousFuture instead of using `compute`.
+      // Win → block → random. SynchronousFuture (no isolate).
       easy => SynchronousFuture(_aiEasy(input)),
-
-      // If the AI can make a winning move, do it.
-      // If the AI can block an opponent's winning move, do it.
-      // If either player has a segment that's (winLength - 2) pieces long and isn't blocked at either end, the list of moves to consider should be narrowed down to the unoccupied spaces at those two ends.
-      // Each space under consideration should be given a ranking equal to the total number of winLength-long segments that include the space (the player's number of segments and the AI's number of segments should be added together). Move in the spot with the highest ranking (if there's a tie, pick one at random).
+      // Win → block → defend threats → attack → rank open-segment ends.
       hard => compute(_aiHard, input),
-
-      // Follow the same process as Difficulty.hard, but if the ranking results in a tie, do the following:
-      // - If the choice is perfectly symmetrical, move in a random spot.
-      // - Otherwise, pick the optimal space by looking several moves ahead (assume that both the user and the AI follow the Difficulty.hard algorithm and account for every possibility when there's a tied ranking.)
+      // Hard's option set, then symmetry / multi-ply search on ties.
       brutal => compute(_aiBrutal, input),
     };
   }
@@ -53,6 +45,16 @@ extension<T> on List<T> {
     assert(isNotEmpty);
     return this[math.Random().nextInt(length)];
   }
+}
+
+// --- Board helpers -----------------------------------------------------------
+
+bool _inBounds(List<List<PlayerMark?>> board, int row, int col) {
+  return row >= 0 && row < board.length && col >= 0 && col < board.first.length;
+}
+
+PlayerMark? _at(List<List<PlayerMark?>> board, int row, int col) {
+  return _inBounds(board, row, col) ? board[row][col] : null;
 }
 
 /// X always moves first, so the side to move is X when both have the same count.
@@ -74,7 +76,38 @@ PlayerMark _sideToMove(List<List<PlayerMark?>> board) {
   return xCount == oCount ? .x : .o;
 }
 
-List<(int row, int col)> _allEmpty(List<List<PlayerMark?>> board) {
+bool _boardIsEmpty(List<List<PlayerMark?>> board) {
+  for (final row in board) {
+    for (final cell in row) {
+      if (cell != null) return false;
+    }
+  }
+  return true;
+}
+
+bool _boardIsFull(List<List<PlayerMark?>> board) {
+  for (final row in board) {
+    for (final cell in row) {
+      if (cell == null) return false;
+    }
+  }
+  return true;
+}
+
+_Cell _centerMove(List<List<PlayerMark?>> board) =>
+    (board.length ~/ 2, board.first.length ~/ 2);
+
+int _markCount(List<List<PlayerMark?>> board, PlayerMark mark) {
+  var count = 0;
+  for (final row in board) {
+    for (final cell in row) {
+      if (cell == mark) count++;
+    }
+  }
+  return count;
+}
+
+List<_Cell> _allEmpty(List<List<PlayerMark?>> board) {
   return [
     for (var row = 0; row < board.length; row++)
       for (var col = 0; col < board[row].length; col++)
@@ -82,51 +115,84 @@ List<(int row, int col)> _allEmpty(List<List<PlayerMark?>> board) {
   ];
 }
 
-/// Unoccupied cells within Chebyshev distance [winLength] of any occupied cell.
-/// On an empty board, every cell is a candidate.
-List<(int row, int col)> _candidateMoves(List<List<PlayerMark?>> board, int winLength) {
+/// Empty cells within Chebyshev [radius] of (row, col), optionally including the center if empty.
+List<_Cell> _emptiesNear(
+  List<List<PlayerMark?>> board,
+  int row,
+  int col,
+  int radius, {
+  bool includeCenter = false,
+}) {
+  final cells = <_Cell>[];
+  for (var r = row - radius; r <= row + radius; r++) {
+    for (var c = col - radius; c <= col + radius; c++) {
+      if (!_inBounds(board, r, c) || board[r][c] != null) continue;
+      if (!includeCenter && r == row && c == col) continue;
+      cells.add((r, c));
+    }
+  }
+  return cells;
+}
+
+/// Temporarily place [mark], run [body], always restore.
+T _withMark<T>(
+  List<List<PlayerMark?>> board,
+  int row,
+  int col,
+  PlayerMark mark,
+  T Function() body,
+) {
+  board[row][col] = mark;
+  try {
+    return body();
+  } finally {
+    board[row][col] = null;
+  }
+}
+
+// --- Candidates --------------------------------------------------------------
+
+/// Nearby empties; center only on an empty board.
+List<_Cell> _candidateMoves(List<List<PlayerMark?>> board, int winLength) {
   final rows = board.length;
   final cols = board.first.length;
-  final occupied = <(int, int)>[
+  final occupied = <_Cell>[
     for (var row = 0; row < rows; row++)
       for (var col = 0; col < cols; col++)
         if (board[row][col] != null) (row, col),
   ];
-  if (occupied.isEmpty) return _allEmpty(board);
+  if (occupied.isEmpty) return [_centerMove(board)];
 
-  final candidates = <(int, int)>{};
+  // Early game: stay tight; full winLength radius dilutes ranking.
+  final maxDist = occupied.length <= 4 ? 2 : winLength - 1;
+  final candidates = <_Cell>{};
   for (final (occupiedRow, occupiedCol) in occupied) {
-    final rowMin = math.max(0, occupiedRow - winLength);
-    final rowMax = math.min(rows - 1, occupiedRow + winLength);
-    final colMin = math.max(0, occupiedCol - winLength);
-    final colMax = math.min(cols - 1, occupiedCol + winLength);
-    for (var row = rowMin; row <= rowMax; row++) {
-      for (var col = colMin; col <= colMax; col++) {
-        if (board[row][col] != null) continue;
-        final distance = math.max((row - occupiedRow).abs(), (col - occupiedCol).abs());
-        if (distance < winLength) candidates.add((row, col));
-      }
+    for (final cell in _emptiesNear(board, occupiedRow, occupiedCol, maxDist)) {
+      final (row, col) = cell;
+      final distance = math.max((row - occupiedRow).abs(), (col - occupiedCol).abs());
+      if (distance <= maxDist) candidates.add(cell);
     }
   }
   return candidates.toList();
 }
 
+List<_Cell> _movePool(List<List<PlayerMark?>> board, int winLength) {
+  final candidates = _candidateMoves(board, winLength);
+  return candidates.isEmpty ? _allEmpty(board) : candidates;
+}
+
+// --- Wins --------------------------------------------------------------------
+
 bool _formsWin(List<List<PlayerMark?>> board, int row, int col, PlayerMark mark, int winLength) {
-  final rows = board.length;
-  final cols = board.first.length;
   for (final (dRow, dCol) in BoardData.directions) {
     var count = 1;
-    for (var step = 1; step < winLength; step++) {
-      final r = row + step * dRow;
-      final c = col + step * dCol;
-      if (r < 0 || r >= rows || c < 0 || c >= cols || board[r][c] != mark) break;
-      count++;
-    }
-    for (var step = 1; step < winLength; step++) {
-      final r = row - step * dRow;
-      final c = col - step * dCol;
-      if (r < 0 || r >= rows || c < 0 || c >= cols || board[r][c] != mark) break;
-      count++;
+    for (final sign in const [1, -1]) {
+      for (var step = 1; step < winLength; step++) {
+        final r = row + sign * step * dRow;
+        final c = col + sign * step * dCol;
+        if (_at(board, r, c) != mark) break;
+        count++;
+      }
     }
     if (count >= winLength) return true;
   }
@@ -140,15 +206,12 @@ bool _isWinningPlacement(
   PlayerMark mark,
   int winLength,
 ) {
-  board[row][col] = mark;
-  final won = _formsWin(board, row, col, mark, winLength);
-  board[row][col] = null;
-  return won;
+  return _withMark(board, row, col, mark, () => _formsWin(board, row, col, mark, winLength));
 }
 
-List<(int row, int col)> _winningPlacements(
+List<_Cell> _winningPlacements(
   List<List<PlayerMark?>> board,
-  List<(int row, int col)> candidates,
+  List<_Cell> candidates,
   PlayerMark mark,
   int winLength,
 ) {
@@ -158,24 +221,42 @@ List<(int row, int col)> _winningPlacements(
   ];
 }
 
-/// Open ends of any contiguous run of length `winLength - 2` that is empty on both sides.
-Set<(int row, int col)>? _openSegmentEnds(List<List<PlayerMark?>> board, int winLength) {
-  final runLength = winLength - 2;
-  if (runLength < 1) return null;
+/// Immediate wins available to [player] near a focus cell (avoids full-board scans).
+int _immediateWinCountNear(
+  List<List<PlayerMark?>> board,
+  int focusRow,
+  int focusCol,
+  PlayerMark player,
+  int winLength,
+) {
+  final nearby = _emptiesNear(board, focusRow, focusCol, winLength, includeCenter: true);
+  return _winningPlacements(board, nearby, player, winLength).length;
+}
 
-  final rows = board.length;
-  final cols = board.first.length;
-  final ends = <(int, int)>{};
+// --- Open runs / threats -----------------------------------------------------
+
+/// Open both-ends runs of exactly [runLength] for optional [onlyMark].
+List<({PlayerMark mark, _Cell a, _Cell b})> _openRuns(
+  List<List<PlayerMark?>> board,
+  int runLength, {
+  PlayerMark? onlyMark,
+}) {
+  if (runLength < 1) return const [];
+
+  final runs = <({PlayerMark mark, _Cell a, _Cell b})>[];
 
   for (final (dRow, dCol) in BoardData.directions) {
-    for (var row = 0; row < rows; row++) {
-      for (var col = 0; col < cols; col++) {
+    for (var row = 0; row < board.length; row++) {
+      for (var col = 0; col < board[row].length; col++) {
         final mark = board[row][col];
-        if (mark == null) continue;
+        if (mark == null || (onlyMark != null && mark != onlyMark)) continue;
+
+        // Count each run once: skip if previous cell continues the same mark.
+        if (_at(board, row - dRow, col - dCol) == mark) continue;
 
         final endRow = row + (runLength - 1) * dRow;
         final endCol = col + (runLength - 1) * dCol;
-        if (endRow < 0 || endRow >= rows || endCol < 0 || endCol >= cols) continue;
+        if (!_inBounds(board, endRow, endCol)) continue;
 
         var isRun = true;
         for (var i = 1; i < runLength; i++) {
@@ -186,27 +267,68 @@ Set<(int row, int col)>? _openSegmentEnds(List<List<PlayerMark?>> board, int win
         }
         if (!isRun) continue;
 
-        final beforeRow = row - dRow;
-        final beforeCol = col - dCol;
-        final afterRow = row + runLength * dRow;
-        final afterCol = col + runLength * dCol;
-        final beforeInBounds =
-            beforeRow >= 0 && beforeRow < rows && beforeCol >= 0 && beforeCol < cols;
-        final afterInBounds = afterRow >= 0 && afterRow < rows && afterCol >= 0 && afterCol < cols;
-        if (!beforeInBounds || !afterInBounds) continue;
-        if (board[beforeRow][beforeCol] != null || board[afterRow][afterCol] != null) continue;
+        // Exact length: must not extend further.
+        if (_at(board, row + runLength * dRow, col + runLength * dCol) == mark) continue;
 
-        ends
-          ..add((beforeRow, beforeCol))
-          ..add((afterRow, afterCol));
+        final before = (row - dRow, col - dCol);
+        final after = (row + runLength * dRow, col + runLength * dCol);
+        if (!_inBounds(board, before.$1, before.$2) || !_inBounds(board, after.$1, after.$2)) {
+          continue;
+        }
+        if (board[before.$1][before.$2] != null || board[after.$1][after.$2] != null) continue;
+
+        runs.add((mark: mark, a: before, b: after));
       }
     }
   }
-
-  return ends.isEmpty ? null : ends;
+  return runs;
 }
 
-/// How many [winLength]-windows containing [row],[col] are still achievable for [player].
+Set<_Cell> _openRunEnds(List<List<PlayerMark?>> board, int runLength, {PlayerMark? onlyMark}) {
+  final runs = _openRuns(board, runLength, onlyMark: onlyMark);
+  return {for (final run in runs) run.a, for (final run in runs) run.b};
+}
+
+/// Open fours (winLength−1) and open threes (winLength−2) for [player].
+_OpenThreats _countOpenThreats(
+  List<List<PlayerMark?>> board,
+  int winLength,
+  PlayerMark player,
+) {
+  return (
+    openFours: _openRuns(board, winLength - 1, onlyMark: player).length,
+    openThrees: _openRuns(board, winLength - 2, onlyMark: player).length,
+  );
+}
+
+/// Open four, dual open threes, dual immediate wins, or must-block + leftover open three.
+bool _hasDoubleThreat(List<List<PlayerMark?>> board, int winLength, PlayerMark player) {
+  final threats = _countOpenThreats(board, winLength, player);
+  if (threats.openFours >= 1 || threats.openThrees >= 2) return true;
+
+  // Immediate wins must go through existing stones; candidate neighborhood is enough.
+  final pool = _movePool(board, winLength);
+  final immediate = _winningPlacements(board, pool, player, winLength);
+  return immediate.length >= 2 || (immediate.isNotEmpty && threats.openThrees >= 1);
+}
+
+/// Empty cells where placing for [player] creates a double threat.
+List<_Cell> _doubleThreatPoints(
+  List<List<PlayerMark?>> board,
+  List<_Cell> pool,
+  int winLength,
+  PlayerMark player,
+) {
+  return [
+    for (final (row, col) in pool)
+      if (board[row][col] == null)
+        if (_withMark(board, row, col, player, () => _hasDoubleThreat(board, winLength, player)))
+          (row, col),
+  ];
+}
+
+// --- Ranking -----------------------------------------------------------------
+
 int _segmentCountForPlayer(
   List<List<PlayerMark?>> board,
   int row,
@@ -214,8 +336,6 @@ int _segmentCountForPlayer(
   int winLength,
   PlayerMark player,
 ) {
-  final rows = board.length;
-  final cols = board.first.length;
   var count = 0;
 
   for (final (dRow, dCol) in BoardData.directions) {
@@ -224,16 +344,7 @@ int _segmentCountForPlayer(
       final startCol = col - offset * dCol;
       final endRow = startRow + (winLength - 1) * dRow;
       final endCol = startCol + (winLength - 1) * dCol;
-      if (startRow < 0 ||
-          startRow >= rows ||
-          startCol < 0 ||
-          startCol >= cols ||
-          endRow < 0 ||
-          endRow >= rows ||
-          endCol < 0 ||
-          endCol >= cols) {
-        continue;
-      }
+      if (!_inBounds(board, startRow, startCol) || !_inBounds(board, endRow, endCol)) continue;
 
       var valid = true;
       for (var i = 0; i < winLength; i++) {
@@ -249,20 +360,65 @@ int _segmentCountForPlayer(
   return count;
 }
 
-int _moveRank(List<List<PlayerMark?>> board, int row, int col, int winLength) {
-  return _segmentCountForPlayer(board, row, col, winLength, .x) +
-      _segmentCountForPlayer(board, row, col, winLength, .o);
+int _proximityScore(List<List<PlayerMark?>> board, int row, int col) {
+  var score = 0;
+  // Only stones within distance 3 contribute.
+  for (var r = row - 3; r <= row + 3; r++) {
+    for (var c = col - 3; c <= col + 3; c++) {
+      if (_at(board, r, c) == null) continue;
+      final distance = math.max((r - row).abs(), (c - col).abs());
+      score += switch (distance) {
+        1 => 14,
+        2 => 6,
+        3 => 2,
+        _ => 0,
+      };
+    }
+  }
+  return score;
 }
 
-List<(int row, int col)> _highestRankedMoves(
+int _threatBonus(_OpenThreats threats, {required int openFour, required int openThree}) {
+  return threats.openFours * openFour + threats.openThrees * openThree;
+}
+
+int _moveRank(
   List<List<PlayerMark?>> board,
-  List<(int row, int col)> candidates,
+  int row,
+  int col,
+  int winLength,
+  PlayerMark toMove,
+) {
+  final base =
+      _segmentCountForPlayer(board, row, col, winLength, .x) +
+      _segmentCountForPlayer(board, row, col, winLength, .o);
+
+  final attackBonus = _withMark(board, row, col, toMove, () {
+    final threats = _countOpenThreats(board, winLength, toMove);
+    final immediate = _immediateWinCountNear(board, row, col, toMove, winLength);
+    return _threatBonus(threats, openFour: 500, openThree: 50) + immediate * 300;
+  });
+
+  final denyBonus = _withMark(board, row, col, toMove.opponent, () {
+    final threats = _countOpenThreats(board, winLength, toMove.opponent);
+    final immediate = _immediateWinCountNear(board, row, col, toMove.opponent, winLength);
+    return _threatBonus(threats, openFour: 400, openThree: 40) + immediate * 250;
+  });
+
+  return base + attackBonus + denyBonus + _proximityScore(board, row, col);
+}
+
+List<_Cell> _highestRankedMoves(
+  List<List<PlayerMark?>> board,
+  List<_Cell> candidates,
   int winLength,
 ) {
+  if (candidates.isEmpty) return const [];
+  final toMove = _sideToMove(board);
   var bestRank = -1;
-  final best = <(int, int)>[];
+  final best = <_Cell>[];
   for (final (row, col) in candidates) {
-    final rank = _moveRank(board, row, col, winLength);
+    final rank = _moveRank(board, row, col, winLength, toMove);
     if (rank > bestRank) {
       bestRank = rank;
       best
@@ -275,43 +431,67 @@ List<(int row, int col)> _highestRankedMoves(
   return best;
 }
 
-/// Candidate list after win/block filtering is handled separately; applies open-segment narrowing.
-List<(int row, int col)> _narrowedCandidates(List<List<PlayerMark?>> board, int winLength) {
-  var candidates = _candidateMoves(board, winLength);
-  if (candidates.isEmpty) candidates = _allEmpty(board);
-
-  final ends = _openSegmentEnds(board, winLength);
-  if (ends != null) {
-    final narrowed = [
-      for (final move in candidates)
-        if (ends.contains(move)) move,
-    ];
-    if (narrowed.isNotEmpty) return narrowed;
-  }
-  return candidates;
+/// Prefer non-empty [preferred] filtered to [pool]; otherwise null.
+List<_Cell>? _rankedIfAny(
+  List<List<PlayerMark?>> board,
+  List<_Cell> pool,
+  Iterable<_Cell> preferred,
+  int winLength,
+) {
+  final filtered = [
+    for (final move in pool)
+      if (preferred.contains(move)) move,
+  ];
+  if (filtered.isEmpty) return null;
+  return _highestRankedMoves(board, filtered, winLength);
 }
 
-/// All moves [Difficulty.hard] would consider equally best (for branching under brutal).
-List<(int row, int col)> _hardMoveOptions(List<List<PlayerMark?>> board, int winLength) {
+// --- Hard policy -------------------------------------------------------------
+
+List<_Cell> _hardMoveOptions(List<List<PlayerMark?>> board, int winLength) {
+  if (_boardIsEmpty(board)) return [_centerMove(board)];
+
   final ai = _sideToMove(board);
-  final candidates = _candidateMoves(board, winLength);
-  final pool = candidates.isEmpty ? _allEmpty(board) : candidates;
+  final pool = _movePool(board, winLength);
   if (pool.isEmpty) return const [];
+
+  final opponent = ai.opponent;
 
   final wins = _winningPlacements(board, pool, ai, winLength);
   if (wins.isNotEmpty) return wins;
 
-  final blocks = _winningPlacements(board, pool, ai.opponent, winLength);
+  final blocks = _winningPlacements(board, pool, opponent, winLength);
   if (blocks.isNotEmpty) return blocks;
 
-  return _highestRankedMoves(board, _narrowedCandidates(board, winLength), winLength);
+  // Defend before inventing attacks: an ignored open three is usually a loss.
+  if (_markCount(board, opponent) >= 2) {
+    final defending = _doubleThreatPoints(board, pool, winLength, opponent);
+    if (defending.isNotEmpty) return _highestRankedMoves(board, defending, winLength);
+
+    final openThreeEnds = _openRunEnds(board, winLength - 2, onlyMark: opponent);
+    final urgent = _rankedIfAny(board, pool, openThreeEnds, winLength);
+    if (urgent != null) return urgent;
+  }
+
+  if (_markCount(board, ai) >= 2) {
+    final attacking = _doubleThreatPoints(board, pool, winLength, ai);
+    if (attacking.isNotEmpty) return _highestRankedMoves(board, attacking, winLength);
+  }
+
+  // Fall back: any open-three ends, else full candidate ranking.
+  final anyOpenEnds = _openRunEnds(board, winLength - 2);
+  final narrowed = _rankedIfAny(board, pool, anyOpenEnds, winLength);
+  return narrowed ?? _highestRankedMoves(board, pool, winLength);
 }
 
-(int row, int col) _aiEasy(_AiInput input) {
+// --- Difficulty entry points -------------------------------------------------
+
+_Cell _aiEasy(_AiInput input) {
   final (:board, :winLength) = input;
+  if (_boardIsEmpty(board)) return _centerMove(board);
+
   final ai = _sideToMove(board);
-  final candidates = _candidateMoves(board, winLength);
-  final pool = candidates.isEmpty ? _allEmpty(board) : candidates;
+  final pool = _movePool(board, winLength);
   assert(pool.isNotEmpty, 'AI called on a full board');
 
   final wins = _winningPlacements(board, pool, ai, winLength);
@@ -323,185 +503,157 @@ List<(int row, int col)> _hardMoveOptions(List<List<PlayerMark?>> board, int win
   return pool.random;
 }
 
-(int row, int col) _aiHard(_AiInput input) {
+_Cell _aiHard(_AiInput input) {
   final (:board, :winLength) = input;
+  if (_boardIsEmpty(board)) return _centerMove(board);
   final options = _hardMoveOptions(board, winLength);
   assert(options.isNotEmpty, 'AI called on a full board');
   return options.random;
 }
 
-/// Board-preserving maps under the square dihedral group (identity included).
-List<(int, int) Function(int row, int col)> _boardSymmetries(List<List<PlayerMark?>> board) {
+// --- Brutal search -----------------------------------------------------------
+
+List<_Cell Function(_Cell)> _boardSymmetries(List<List<PlayerMark?>> board) {
   final rows = board.length;
   final cols = board.first.length;
-  // Non-square boards only admit reflections through axes parallel to the sides when dimensions match the transform.
-  final transforms = <(int, int) Function(int, int)>[
-    (r, c) => (r, c),
+
+  final transforms = <_Cell Function(_Cell)>[
+    (cell) => cell,
     if (rows == cols) ...[
-      (r, c) => (c, rows - 1 - r), // 90° CW
-      (r, c) => (rows - 1 - r, cols - 1 - c), // 180°
-      (r, c) => (cols - 1 - c, r), // 270° CW
-      (r, c) => (r, cols - 1 - c), // reflect vertical axis
-      (r, c) => (rows - 1 - r, c), // reflect horizontal axis
-      (r, c) => (c, r), // reflect main diagonal
-      (r, c) => (cols - 1 - c, rows - 1 - r), // reflect anti-diagonal
+      (cell) => (cell.$2, rows - 1 - cell.$1), // 90° CW
+      (cell) => (rows - 1 - cell.$1, cols - 1 - cell.$2), // 180°
+      (cell) => (cols - 1 - cell.$2, cell.$1), // 270° CW
+      (cell) => (cell.$1, cols - 1 - cell.$2),
+      (cell) => (rows - 1 - cell.$1, cell.$2),
+      (cell) => (cell.$2, cell.$1),
+      (cell) => (cols - 1 - cell.$2, rows - 1 - cell.$1),
     ] else ...[
-      (r, c) => (r, cols - 1 - c),
-      (r, c) => (rows - 1 - r, c),
-      (r, c) => (rows - 1 - r, cols - 1 - c),
+      (cell) => (cell.$1, cols - 1 - cell.$2),
+      (cell) => (rows - 1 - cell.$1, cell.$2),
+      (cell) => (rows - 1 - cell.$1, cols - 1 - cell.$2),
     ],
   ];
 
-  bool preserves((int, int) Function(int, int) transform) {
+  bool preserves(_Cell Function(_Cell) transform) {
     for (var row = 0; row < rows; row++) {
       for (var col = 0; col < cols; col++) {
-        final (tr, tc) = transform(row, col);
+        final (tr, tc) = transform((row, col));
         if (board[row][col] != board[tr][tc]) return false;
       }
     }
     return true;
   }
 
-  return [
-    for (final transform in transforms)
-      if (preserves(transform)) transform,
-  ];
+  return [for (final transform in transforms) if (preserves(transform)) transform];
 }
 
-/// True when every move in [moves] lies in one orbit under the board's symmetry group.
-bool _movesAreSymmetricallyEquivalent(
-  List<List<PlayerMark?>> board,
-  List<(int row, int col)> moves,
-) {
+bool _movesAreSymmetricallyEquivalent(List<List<PlayerMark?>> board, List<_Cell> moves) {
   if (moves.length <= 1) return true;
   final symmetries = _boardSymmetries(board);
   if (symmetries.length <= 1) return false;
 
   final moveSet = moves.toSet();
-  final orbit = <(int, int)>{moves.first};
+  final orbit = <_Cell>{moves.first};
   final queue = [moves.first];
   while (queue.isNotEmpty) {
-    final (row, col) = queue.removeLast();
+    final cell = queue.removeLast();
     for (final transform in symmetries) {
-      final image = transform(row, col);
-      if (moveSet.contains(image) && orbit.add(image)) {
-        queue.add(image);
-      }
+      final image = transform(cell);
+      if (moveSet.contains(image) && orbit.add(image)) queue.add(image);
     }
   }
   return orbit.length == moveSet.length;
 }
 
-bool _isFull(List<List<PlayerMark?>> board) {
-  for (final row in board) {
-    for (final cell in row) {
-      if (cell == null) return false;
+PlayerMark? _findWinner(List<List<PlayerMark?>> board, int winLength) {
+  for (var row = 0; row < board.length; row++) {
+    for (var col = 0; col < board[row].length; col++) {
+      final mark = board[row][col];
+      if (mark == null) continue;
+      if (_formsWin(board, row, col, mark, winLength)) return mark;
     }
   }
-  return true;
+  return null;
 }
 
-/// Outcome from the root AI's perspective: +1 win, -1 loss, 0 draw / horizon.
+int _brutalSearchDepth(List<List<PlayerMark?>> board, int optionCount) {
+  final cells = board.length * board.first.length;
+  if (optionCount <= 4) {
+    if (cells <= 9) return 10;
+    if (cells <= 25) return 8;
+    if (cells <= 81) return 6;
+    return 5;
+  }
+  if (cells <= 9) return 8;
+  if (cells <= 25) return 5;
+  return 3;
+}
+
+int _brutalHeuristic(List<List<PlayerMark?>> board, int winLength, PlayerMark rootAi) {
+  final us = _countOpenThreats(board, winLength, rootAi);
+  final them = _countOpenThreats(board, winLength, rootAi.opponent);
+  return _threatBonus(us, openFour: 50, openThree: 5) - _threatBonus(them, openFour: 50, openThree: 5);
+}
+
 int _brutalEvaluate(
   List<List<PlayerMark?>> board,
   int winLength,
   PlayerMark rootAi,
   int depthRemaining,
 ) {
-  // Terminal checks use the last move's side; scan is fine at this scale.
   if (_findWinner(board, winLength) case final winner?) {
-    return winner == rootAi ? 1 : -1;
+    return winner == rootAi ? 1000 : -1000;
   }
-  if (_isFull(board) || depthRemaining <= 0) return 0;
+  if (_boardIsFull(board)) return 0;
+  if (depthRemaining <= 0) return _brutalHeuristic(board, winLength, rootAi);
 
   final toMove = _sideToMove(board);
   final options = _hardMoveOptions(board, winLength);
   if (options.isEmpty) return 0;
 
-  if (toMove == rootAi) {
-    var best = -2;
-    for (final (row, col) in options) {
-      board[row][col] = toMove;
-      final score = _brutalEvaluate(board, winLength, rootAi, depthRemaining - 1);
-      board[row][col] = null;
+  final maximizing = toMove == rootAi;
+  var best = maximizing ? -0x3fffffff : 0x3fffffff;
+  for (final (row, col) in options) {
+    final score = _withMark(
+      board,
+      row,
+      col,
+      toMove,
+      () => _brutalEvaluate(board, winLength, rootAi, depthRemaining - 1),
+    );
+    if (maximizing) {
       if (score > best) best = score;
-      if (best == 1) break;
-    }
-    return best;
-  } else {
-    var worst = 2;
-    for (final (row, col) in options) {
-      board[row][col] = toMove;
-      final score = _brutalEvaluate(board, winLength, rootAi, depthRemaining - 1);
-      board[row][col] = null;
-      if (score < worst) worst = score;
-      if (worst == -1) break;
-    }
-    return worst;
-  }
-}
-
-PlayerMark? _findWinner(List<List<PlayerMark?>> board, int winLength) {
-  final rows = board.length;
-  final cols = board.first.length;
-  for (var row = 0; row < rows; row++) {
-    for (var col = 0; col < cols; col++) {
-      final mark = board[row][col];
-      if (mark == null) continue;
-      for (final (dRow, dCol) in BoardData.directions) {
-        final endRow = row + (winLength - 1) * dRow;
-        final endCol = col + (winLength - 1) * dCol;
-        if (endRow < 0 || endRow >= rows || endCol < 0 || endCol >= cols) continue;
-        var won = true;
-        for (var i = 1; i < winLength; i++) {
-          if (board[row + i * dRow][col + i * dCol] != mark) {
-            won = false;
-            break;
-          }
-        }
-        if (won) return mark;
-      }
+      if (best >= 1000) break;
+    } else {
+      if (score < best) best = score;
+      if (best <= -1000) break;
     }
   }
-  return null;
+  return best;
 }
 
-int _brutalSearchDepth(List<List<PlayerMark?>> board) {
-  final cells = board.length * board.first.length;
-  if (cells <= 9) return 8;
-  if (cells <= 25) return 5;
-  if (cells <= 81) return 3;
-  return 2;
-}
-
-(int row, int col) _aiBrutal(_AiInput input) {
+_Cell _aiBrutal(_AiInput input) {
   final (:board, :winLength) = input;
-  final ai = _sideToMove(board);
-  final candidates = _candidateMoves(board, winLength);
-  final pool = candidates.isEmpty ? _allEmpty(board) : candidates;
-  assert(pool.isNotEmpty, 'AI called on a full board');
+  if (_boardIsEmpty(board)) return _centerMove(board);
 
-  final wins = _winningPlacements(board, pool, ai, winLength);
-  if (wins.isNotEmpty) return wins.random;
-
-  final blocks = _winningPlacements(board, pool, ai.opponent, winLength);
-  if (blocks.isNotEmpty) return blocks.random;
-
-  final ranked = _highestRankedMoves(board, _narrowedCandidates(board, winLength), winLength);
-  assert(ranked.isNotEmpty);
-  if (ranked.length == 1) return ranked.single;
-
-  if (_movesAreSymmetricallyEquivalent(board, ranked)) {
-    return ranked.random;
+  final options = _hardMoveOptions(board, winLength);
+  assert(options.isNotEmpty, 'AI called on a full board');
+  if (options.length == 1 || _movesAreSymmetricallyEquivalent(board, options)) {
+    return options.random;
   }
 
-  final depth = _brutalSearchDepth(board);
-  var bestScore = -2;
-  final bestMoves = <(int, int)>[];
-  for (final (row, col) in ranked) {
-    board[row][col] = ai;
-    final score = _brutalEvaluate(board, winLength, ai, depth);
-    board[row][col] = null;
+  final ai = _sideToMove(board);
+  final depth = _brutalSearchDepth(board, options.length);
+  var bestScore = -0x3fffffff;
+  final bestMoves = <_Cell>[];
+  for (final (row, col) in options) {
+    final score = _withMark(
+      board,
+      row,
+      col,
+      ai,
+      () => _brutalEvaluate(board, winLength, ai, depth),
+    );
     if (score > bestScore) {
       bestScore = score;
       bestMoves
