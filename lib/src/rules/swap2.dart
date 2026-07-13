@@ -162,7 +162,7 @@ abstract final class Swap2 {
     final ruleset = Ruleset.current.value;
     final plan = switch (phase.value) {
       .opening3 => planOpening3(Board.state.rows, Board.state.cols),
-      .extra2 => planExtra2([for (final row in Board.state.value) List<PlayerMark?>.of(row)]),
+      .extra2 => planExtra2(Board.state.value.copyMutable()),
       _ => const <(int, int)>[],
     };
     assert(
@@ -182,28 +182,32 @@ abstract final class Swap2 {
             col < 0 ||
             col >= Board.state.cols ||
             Board.state.value[row][col] != null) {
-          (row, col) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value);
+          (row, col) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value, mark);
         }
-        final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: true);
-        if (gameOver == null) {
+        var result = await Board.placeAndResolve(
+          row,
+          col,
+          mark,
+          ruleset,
+          byAi: true,
+          advanceTurn: false,
+          onGameOver: reset,
+        );
+        if (result == null) {
           // Illegal plan cell under renju etc. — try a search move.
-          final (r2, c2) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value);
-          final gameOver2 = Board.commitMark(r2, c2, mark, ruleset, byAi: true);
-          if (gameOver2 == null) continue;
-          await Board.animatePlacement();
-          if (gameOver2) {
-            reset();
-            await Board.runGameEndSequence(ruleset);
-            return;
-          }
-        } else {
-          await Board.animatePlacement();
-          if (gameOver) {
-            reset();
-            await Board.runGameEndSequence(ruleset);
-            return;
-          }
+          final (r2, c2) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value, mark);
+          result = await Board.placeAndResolve(
+            r2,
+            c2,
+            mark,
+            ruleset,
+            byAi: true,
+            advanceTurn: false,
+            onGameOver: reset,
+          );
+          if (result == null) continue;
         }
+        if (result.gameOver) return;
         await _finishPlacementStep();
         if (!isPlacing) break;
       }
@@ -215,14 +219,16 @@ abstract final class Swap2 {
   static Future<void> placeHumanMark(int row, int col) async {
     final ruleset = Ruleset.current.value;
     final mark = nextMark;
-    if (!Board.isLegalPlacement(row, col, mark, ruleset)) return;
-    final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: false)!;
-    await Board.animatePlacement();
-    if (gameOver) {
-      reset();
-      await Board.runGameEndSequence(ruleset);
-      return;
-    }
+    final result = await Board.placeAndResolve(
+      row,
+      col,
+      mark,
+      ruleset,
+      byAi: false,
+      advanceTurn: false,
+      onGameOver: reset,
+    );
+    if (result == null || result.gameOver) return;
     await _finishPlacementStep();
   }
 
@@ -248,11 +254,7 @@ abstract final class Swap2 {
   static List<(int row, int col)> planExtra2(List<List<PlayerMark?>> board) {
     final rows = board.length;
     final cols = board.first.length;
-    final occupied = <(int, int)>{
-      for (var r = 0; r < rows; r++)
-        for (var c = 0; c < cols; c++)
-          if (board[r][c] != null) (r, c),
-    };
+    final occupied = board.occupiedCells.toSet();
     final center = _centroid(occupied, rows, cols);
 
     final pairs = List.of(_extra2Templates)..shuffle(_rng);
@@ -270,7 +272,7 @@ abstract final class Swap2 {
     final white =
         _firstFreeNear(board, center, preferDistance: 2) ??
         _firstFreeNear(board, center, preferDistance: 1) ??
-        (rows ~/ 2, cols ~/ 2);
+        board.centerCell;
     final black =
         _firstFreeNear(board, center, preferDistance: 3, exclude: {white}) ??
         _firstFreeNear(board, center, preferDistance: 2, exclude: {white}) ??
@@ -343,7 +345,7 @@ abstract final class Swap2 {
     final used = <(int, int)>{};
     for (var i = 0; i < mapped.length; i++) {
       final cell = mapped[i];
-      if (!used.contains(cell) && _inBoard(cell, rows, cols)) {
+      if (!used.contains(cell) && cell.inBoardSize(rows, cols)) {
         used.add(cell);
         mapped[i] = cell;
         continue;
@@ -376,31 +378,18 @@ abstract final class Swap2 {
     return (sumR ~/ cells.length, sumC ~/ cells.length);
   }
 
-  static bool _inBoard((int, int) cell, int rows, int cols) {
-    final (r, c) = cell;
-    return r >= 0 && r < rows && c >= 0 && c < cols;
-  }
-
   static (int, int)? _firstFreeNear(
     List<List<PlayerMark?>> board,
     (int, int) origin, {
     required int preferDistance,
     Set<(int, int)> exclude = const {},
   }) {
-    final rows = board.length;
-    final cols = board.first.length;
-    final occupied = {
-      for (var r = 0; r < rows; r++)
-        for (var c = 0; c < cols; c++)
-          if (board[r][c] != null) (r, c),
-      ...exclude,
-    };
     return _firstFreeNearCoords(
-      rows,
-      cols,
+      board.length,
+      board.first.length,
       origin,
       preferDistance: preferDistance,
-      exclude: occupied,
+      exclude: {...board.occupiedCells, ...exclude},
     );
   }
 

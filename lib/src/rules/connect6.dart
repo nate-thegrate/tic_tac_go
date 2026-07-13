@@ -13,33 +13,13 @@ abstract final class Connect6 {
     stonesThisTurn.value = 0;
   }
 
-  static int _countMark(BoardData board, PlayerMark mark) {
-    var count = 0;
-    for (final row in board) {
-      for (final cell in row) {
-        if (cell == mark) count++;
-      }
-    }
-    return count;
-  }
-
-  static int totalStones(BoardData board) {
-    var count = 0;
-    for (final row in board) {
-      for (final cell in row) {
-        if (cell != null) count++;
-      }
-    }
-    return count;
-  }
-
   /// How many stones [mark] must place to finish the current turn, given [board]
   /// *before* the next placement (and [stonesThisTurn] progress).
   static int stonesNeeded(PlayerMark mark, BoardData board) {
     if (!isActive) return 1;
     if (mark == .o) return 2;
     // Black places a single stone only on the game's first turn.
-    final xBeforeThisTurn = _countMark(board, .x) - stonesThisTurn.value;
+    final xBeforeThisTurn = board.countMark(.x) - stonesThisTurn.value;
     return xBeforeThisTurn <= 0 ? 1 : 2;
   }
 
@@ -61,7 +41,7 @@ abstract final class Connect6 {
   /// Recompute [Board.turn] and [stonesThisTurn] from the board after undos.
   static void recomputeTurnFromBoard(BoardData board) {
     if (!isActive) return;
-    final n = totalStones(board);
+    final n = board.stoneCount;
     if (n == 0) {
       Board.turn.value = .x;
       stonesThisTurn.value = 0;

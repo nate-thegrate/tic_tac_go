@@ -13,8 +13,7 @@ abstract final class Renju {
   /// Overlines are not fouls — they simply do not win (see [BoardData.winningRun]).
   static RenjuFoul? foulIfBlackPlays(List<List<PlayerMark?>> board, int row, int col) {
     assert(board[row][col] == null);
-    board[row][col] = .x;
-    try {
+    return (row, col).withMark(board, .x, () {
       // Exact five wins and is never a foul.
       if (_hasExactFiveThrough(board, row, col, .x)) return null;
 
@@ -27,15 +26,11 @@ abstract final class Renju {
       if (fours >= 2) return .doubleFour;
       if (openThrees >= 2) return .doubleThree;
       return null;
-    } finally {
-      board[row][col] = null;
-    }
+    });
   }
 
   static bool isLegalFor(PlayerMark mark, List<List<PlayerMark?>> board, int row, int col) {
-    if (mark != .x) return true;
-    if (board[row][col] != null) return false;
-    return foulIfBlackPlays(board, row, col) == null;
+    return (row, col).isLegalOn(board, mark, .renju);
   }
 
   /// Contiguous run length of [mark] through (row,col), including that cell.
@@ -47,9 +42,7 @@ abstract final class Renju {
     int dCol,
     PlayerMark mark,
   ) {
-    return 1 +
-        _countDir(board, row, col, dRow, dCol, mark) +
-        _countDir(board, row, col, -dRow, -dCol, mark);
+    return (row, col).runLengthThrough(board, mark, dRow, dCol);
   }
 
   static bool _hasExactFiveThrough(
@@ -64,27 +57,6 @@ abstract final class Renju {
     return false;
   }
 
-  static int _countDir(
-    List<List<PlayerMark?>> board,
-    int row,
-    int col,
-    int dRow,
-    int dCol,
-    PlayerMark mark,
-  ) {
-    final rows = board.length;
-    final cols = board.first.length;
-    var count = 0;
-    var r = row + dRow;
-    var c = col + dCol;
-    while (r >= 0 && r < rows && c >= 0 && c < cols && board[r][c] == mark) {
-      count++;
-      r += dRow;
-      c += dCol;
-    }
-    return count;
-  }
-
   /// First empty cell beyond the contiguous [mark] run in [dRow],[dCol], or null.
   static (int, int)? _endBeyondRun(
     List<List<PlayerMark?>> board,
@@ -94,17 +66,15 @@ abstract final class Renju {
     int dCol,
     PlayerMark mark,
   ) {
-    final rows = board.length;
-    final cols = board.first.length;
     var r = row + dRow;
     var c = col + dCol;
-    while (r >= 0 && r < rows && c >= 0 && c < cols && board[r][c] == mark) {
+    while ((r, c).markOn(board) == mark) {
       r += dRow;
       c += dCol;
     }
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return null;
-    if (board[r][c] != null) return null;
-    return (r, c);
+    final end = (r, c);
+    if (!end.inBounds(board) || board[r][c] != null) return null;
+    return end;
   }
 
   /// Open three: contiguous length 3 through the stone, both ends empty.
