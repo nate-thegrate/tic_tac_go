@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
+import 'package:tic_tac_go/src/connect6.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
 import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/menu.dart';
@@ -296,8 +297,20 @@ class Board extends StatelessWidget {
       game_log.undoLast();
     }
 
+    void undoStoneOnly() {
+      if (history.isEmpty) return;
+      final (row, col) = history.removeLast();
+      state.update(row, col, null);
+      game_log.undoLast();
+    }
+
     if (Swap2.isPlacing) {
       Swap2.undoPlacementStone(undoOnce);
+      return;
+    }
+
+    if (Connect6.isActive) {
+      _undoConnect6(undoStoneOnly);
       return;
     }
 
@@ -305,6 +318,47 @@ class Board extends StatelessWidget {
     final undoAiAndUser = humanPlayer.value != null && turn.value == humanPlayer.value;
     undoOnce();
     if (undoAiAndUser && history.isNotEmpty) undoOnce();
+  }
+
+  /// Undo one stone, or a full prior turn (and the human's, in 1-player).
+  static void _undoConnect6(void Function() undoStoneOnly) {
+    if (Connect6.stonesThisTurn.value > 0) {
+      // Mid-turn: revert only the last stone of the current player.
+      undoStoneOnly();
+      Connect6.recomputeTurnFromBoard(state.value);
+      return;
+    }
+
+    // Start of a turn: undo the previous player's full turn.
+    PlayerMark? lastMark;
+    var undone = 0;
+    while (history.isNotEmpty && undone < 2) {
+      final (row, col) = history.last;
+      final mark = state.value[row][col];
+      if (mark == null) break;
+      if (lastMark == null) {
+        lastMark = mark;
+      } else if (mark != lastMark) {
+        break;
+      }
+      undoStoneOnly();
+      undone++;
+    }
+
+    // In 1-player, also undo the human's full turn when undoing an AI reply.
+    final human = humanPlayer.value;
+    if (human != null && lastMark != null && lastMark != human && history.isNotEmpty) {
+      undone = 0;
+      while (history.isNotEmpty && undone < 2) {
+        final (row, col) = history.last;
+        final mark = state.value[row][col];
+        if (mark != human) break;
+        undoStoneOnly();
+        undone++;
+      }
+    }
+
+    Connect6.recomputeTurnFromBoard(state.value);
   }
 
   static void _emitGameOverIfNeeded(Ruleset ruleset) {
@@ -362,20 +416,38 @@ class Board extends StatelessWidget {
     return gameOver;
   }
 
+  /// Plays a full turn for the side to move (1 stone normally; 1 or 2 under connect6).
   static Future<void> _playAiMove(Ruleset ruleset) async {
     final difficulty = Difficulty.selected.value;
-    final (row, col) = await difficulty.aiMove(ruleset, state.value);
     final aiMark = turn.value;
-    final gameOver = commitMark(row, col, aiMark, ruleset, byAi: true);
-    if (gameOver == null) {
-      // Illegal AI move (shouldn't happen if the AI filters renju fouls).
-      return;
-    }
-    await animatePlacement();
-    if (gameOver) {
-      await runGameEndSequence(ruleset);
-    } else {
-      turn.value = aiMark.opponent;
+    final stonesNeeded = Connect6.isActive
+        ? Connect6.stonesRequired(aiMark, state.value)
+        : 1;
+
+    for (var i = 0; i < stonesNeeded; i++) {
+      if (state.value.isGameOver(ruleset)) break;
+      final (row, col) = await difficulty.aiMove(ruleset, state.value);
+      final gameOver = commitMark(row, col, aiMark, ruleset, byAi: true);
+      if (gameOver == null) {
+        // Illegal AI move (shouldn't happen if the AI filters renju fouls).
+        return;
+      }
+      await animatePlacement();
+      if (Connect6.isActive) {
+        final turnDone = Connect6.notePlacement(aiMark, state.value);
+        if (gameOver) {
+          await runGameEndSequence(ruleset);
+          return;
+        }
+        if (!turnDone) continue;
+        turn.value = aiMark.opponent;
+        return;
+      }
+      if (gameOver) {
+        await runGameEndSequence(ruleset);
+      } else {
+        turn.value = aiMark.opponent;
+      }
     }
   }
 
@@ -406,6 +478,7 @@ class Board extends StatelessWidget {
     state.clear();
     history.clear();
     currentMark = null;
+    Connect6.reset();
     _assignSides();
     _startLoggedGame();
     Swap2.beginIfNeeded();
@@ -441,6 +514,7 @@ class Board extends StatelessWidget {
     inputLocked = false;
     currentMark = null;
     Swap2.reset();
+    Connect6.reset();
     game_log.clear();
   }
 
@@ -792,34 +866,26 @@ class Board extends StatelessWidget {
               if (!isLegalPlacement(down, across, userMark, ruleset)) return;
 
               final gameOver = commitMark(down, across, userMark, ruleset, byAi: false)!;
-              final anim = animatePlacement();
+              await animatePlacement();
+
+              if (gameOver) {
+                if (Connect6.isActive) Connect6.reset();
+                await runGameEndSequence(ruleset);
+                return;
+              }
+
+              final turnDone = !Connect6.isActive || Connect6.notePlacement(userMark, state.value);
+              if (!turnDone) {
+                // Connect6: still placing the second stone this turn.
+                return;
+              }
+
+              turn.value = userMark.opponent;
+              if (Connect6.isActive) Connect6.stonesThisTurn.value = 0;
 
               final difficulty = Difficulty.current.value;
-              if (!gameOver && difficulty != null) {
-                // AI thinks while the user's mark animates in.
-                final (_, (aiRow, aiCol)) = await (
-                  anim,
-                  difficulty.aiMove(ruleset, state.value),
-                ).wait;
-                turn.value = userMark.opponent;
-                final aiGameOver = commitMark(aiRow, aiCol, turn.value, ruleset, byAi: true);
-                if (aiGameOver == null) {
-                  turn.value = userMark;
-                  return;
-                }
-                await animatePlacement();
-                if (aiGameOver) {
-                  await runGameEndSequence(ruleset);
-                } else {
-                  turn.value = turn.value.opponent;
-                }
-              } else {
-                await anim;
-                if (gameOver) {
-                  await runGameEndSequence(ruleset);
-                } else {
-                  turn.value = userMark.opponent;
-                }
+              if (difficulty != null) {
+                await _playAiMove(ruleset);
               }
             } finally {
               inputLocked = false;

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/connect6.dart';
 import 'package:tic_tac_go/src/difficulty.dart';
 import 'package:tic_tac_go/src/swap2.dart';
 
@@ -250,6 +251,15 @@ class BottomBar extends StatelessWidget {
                 final done = ref.watch(Swap2.placedInPhase);
                 final mark = player.toString(goMode: isGoMode);
                 textSpan = TextSpan(text: 'PLACE $mark · ${done + 1}/$total');
+              } else if (ruleset == .connect6 && winner == null && !isDraw) {
+                final placed = ref.watch(Connect6.stonesThisTurn);
+                final total = Connect6.stonesRequired(player, ref.watch(Board.state));
+                final status = usersTurn
+                    ? 'YOUR MOVE'
+                    : '${player.toString(goMode: isGoMode)}\'s move';
+                textSpan = TextSpan(
+                  text: total > 1 ? '$status · ${placed + 1}/$total' : status,
+                );
               } else {
                 textSpan = TextSpan(
                   text: winner != null
