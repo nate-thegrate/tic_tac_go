@@ -12,20 +12,20 @@ import 'package:tic_tac_go/src/swap2.dart';
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
 
+  static double _boardAspectRatio(Ref ref) =>
+      ref.select(Board.state, (data) => data.cols / data.rows);
+
   @override
   Widget build(BuildContext context) {
     return _MainContentLayout(
       menu: Menu(),
-      board: RefAspectRatio(
-        (ref) => ref.select(Board.state, (data) => data.cols / data.rows),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Padding(
-              padding: .all(constraints.biggest.shortestSide / 32),
-              child: const Board(),
-            );
-          },
-        ),
+      board: LayoutBuilder(
+        builder: (context, constraints) {
+          return Padding(
+            padding: .all(constraints.biggest.shortestSide / 32),
+            child: const RefAspectRatio(_boardAspectRatio, child: Board()),
+          );
+        },
       ),
       bottomBar: const BottomBar(),
     );
@@ -210,16 +210,17 @@ class BottomBar extends StatelessWidget {
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
               final ruleset = ref.watch(Ruleset.current);
+              // Use Ruleset.current inside the selector: RefElement pins the first
+              // select() closure, so a captured [ruleset] would go stale.
               final (winner, isDraw) = ref.select(
                 Board.state,
-                (data) => (data.winner(ruleset), data.isFull),
+                (data) => (data.winner(Ruleset.current.value), data.isFull),
               );
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
               final isGoMode = ref.watch(goMode);
               final playerText = (winner ?? player).toString(goMode: isGoMode);
               final human = ref.watch(Board.humanPlayer);
-              // Still "YOUR MOVE" during the human's placement animation (turn has not switched yet).
               final usersTurn = human != null && player == human;
               final swap2Phase = ref.watch(Swap2.phase);
               final swap2OptionsVisible = ref.watch(Swap2.optionsVisible);
@@ -243,9 +244,7 @@ class BottomBar extends StatelessWidget {
                   ),
                 };
               } else if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
-                textSpan = TextSpan(
-                  text: swap2OptionsVisible ? 'VIEW BOARD' : 'VIEW OPTIONS',
-                );
+                textSpan = TextSpan(text: swap2OptionsVisible ? 'VIEW BOARD' : 'VIEW OPTIONS');
               } else if (swap2Phase == .opening3 || swap2Phase == .extra2) {
                 final total = swap2Phase == .extra2 ? 2 : 3;
                 final done = ref.watch(Swap2.placedInPhase);
@@ -257,9 +256,7 @@ class BottomBar extends StatelessWidget {
                 final status = usersTurn
                     ? 'YOUR MOVE'
                     : '${player.toString(goMode: isGoMode)}\'s move';
-                textSpan = TextSpan(
-                  text: total > 1 ? '$status · ${placed + 1}/$total' : status,
-                );
+                textSpan = TextSpan(text: total > 1 ? '$status · ${placed + 1}/$total' : status);
               } else {
                 textSpan = TextSpan(
                   text: winner != null
