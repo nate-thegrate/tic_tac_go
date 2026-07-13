@@ -1,6 +1,6 @@
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 /// Connect6: black places 1 on the first turn, then each turn is 2 stones; win length 6.
 abstract final class Connect6 {
@@ -35,7 +35,7 @@ abstract final class Connect6 {
 
   /// How many stones [mark] must place to finish the current turn, given [board]
   /// *before* the next placement (and [stonesThisTurn] progress).
-  static int stonesRequired(PlayerMark mark, BoardData board) {
+  static int stonesNeeded(PlayerMark mark, BoardData board) {
     if (!isActive) return 1;
     if (mark == .o) return 2;
     // Black places a single stone only on the game's first turn.
@@ -48,7 +48,7 @@ abstract final class Connect6 {
   static bool notePlacement(PlayerMark mark, BoardData boardAfterPlace) {
     if (!isActive) return true;
     stonesThisTurn.value++;
-    final required = stonesRequired(mark, boardAfterPlace);
+    final required = stonesNeeded(mark, boardAfterPlace);
     // stonesRequired uses stonesThisTurn; after increment, xBeforeThisTurn for black
     // first turn: countX=1, stonesThisTurn=1 → xBefore=0 → required=1. Good.
     if (stonesThisTurn.value >= required) {

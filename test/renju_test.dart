@@ -1,23 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/renju.dart';
+import 'package:tic_tac_go/src/rules/renju.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
-List<List<PlayerMark?>> empty(int n) =>
-    List.generate(n, (_) => List<PlayerMark?>.filled(n, null));
+List<List<PlayerMark?>> empty(int n) => List.generate(n, (_) => List<PlayerMark?>.filled(n, null));
 
 void main() {
   test('black double-three is a foul', () {
-    // Open horizontal three ready at row 7: .xxx. through cols 3-5 if we add? 
+    // Open horizontal three ready at row 7: .xxx. through cols 3-5 if we add?
     // Classic: two open twos that become open threes with one stone.
     // Simpler: place open three already, and another open two that becomes three.
     // Board:
     // row 5: . x x . . with room for open three via center
-    // Actually: 
+    // Actually:
     //   x x . at (5,5)(5,6) empty (5,4)(5,7) — adding (5,7) or (5,4) makes open three
     //   x
     //   x  at (6,5)(7,5) — adding (5,5) if empty makes vertical open three
-    // Place at (5,5): connects horizontal? 
+    // Place at (5,5): connects horizontal?
     // Horizontal at row 5: need stones
     final b = empty(15);
     // Horizontal open two that becomes open three: (7,5)(7,6), ends (7,4)(7,7)

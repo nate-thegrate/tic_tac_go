@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/connect6.dart';
-import 'package:tic_tac_go/src/difficulty.dart';
-import 'package:tic_tac_go/src/swap2.dart';
+import 'package:tic_tac_go/src/ai_move.dart';
+import 'package:tic_tac_go/src/rules/connect6.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
+import 'package:tic_tac_go/src/rules/swap2.dart';
 
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
@@ -252,7 +253,7 @@ class BottomBar extends StatelessWidget {
                 textSpan = TextSpan(text: 'PLACE $mark · ${done + 1}/$total');
               } else if (ruleset == .connect6 && winner == null && !isDraw) {
                 final placed = ref.watch(Connect6.stonesThisTurn);
-                final total = Connect6.stonesRequired(player, ref.watch(Board.state));
+                final total = Connect6.stonesNeeded(player, ref.watch(Board.state));
                 final status = usersTurn
                     ? 'YOUR MOVE'
                     : '${player.toString(goMode: isGoMode)}\'s move';

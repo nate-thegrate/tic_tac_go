@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 void main() {
   test('connect6 winLength is 6', () {

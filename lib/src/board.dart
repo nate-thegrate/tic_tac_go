@@ -7,12 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
-import 'package:tic_tac_go/src/connect6.dart';
-import 'package:tic_tac_go/src/difficulty.dart';
+import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/menu.dart';
-import 'package:tic_tac_go/src/renju.dart';
-import 'package:tic_tac_go/src/swap2.dart';
+import 'package:tic_tac_go/src/rules/connect6.dart';
+import 'package:tic_tac_go/src/rules/renju.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
+import 'package:tic_tac_go/src/rules/swap2.dart';
 
 enum PlayerMark {
   x,
@@ -428,11 +429,11 @@ class Board extends StatelessWidget {
   static Future<void> _playAiMove(Ruleset ruleset) async {
     final difficulty = Difficulty.selected.value;
     final aiMark = turn.value;
-    final stonesNeeded = Connect6.isActive ? Connect6.stonesRequired(aiMark, state.value) : 1;
+    final stonesNeeded = Connect6.stonesNeeded(aiMark, state.value);
 
     for (var i = 0; i < stonesNeeded; i++) {
       if (state.value.isGameOver(ruleset)) break;
-      final (row, col) = await difficulty.aiMove(ruleset, state.value);
+      final (row, col) = await aiMove(difficulty, ruleset, state.value);
       final gameOver = commitMark(row, col, aiMark, ruleset, byAi: true);
       if (gameOver == null) {
         // Illegal AI move (shouldn't happen if the AI filters renju fouls).
@@ -940,10 +941,7 @@ class GameEnd extends RefWidget {
     // select() selector for the lifetime of the subscription, and a conditional
     // select can miss board updates. Read Ruleset.current inside the selector
     // so a ruleset change is not sticky from the first subscription.
-    final gameOver = ref.select(
-      Board.state,
-      (data) => data.isGameOver(Ruleset.current.value),
-    );
+    final gameOver = ref.select(Board.state, (data) => data.isGameOver(Ruleset.current.value));
 
     final List<Widget> options;
     if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {

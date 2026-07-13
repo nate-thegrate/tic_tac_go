@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/difficulty.dart';
+import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/game_log.dart' as game_log;
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 /// Swap2 opening / color-choice flow.
 enum Swap2Phase {
@@ -182,12 +182,12 @@ abstract final class Swap2 {
             col < 0 ||
             col >= Board.state.cols ||
             Board.state.value[row][col] != null) {
-          (row, col) = await Difficulty.selected.value.aiMove(ruleset, Board.state.value);
+          (row, col) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value);
         }
         final gameOver = Board.commitMark(row, col, mark, ruleset, byAi: true);
         if (gameOver == null) {
           // Illegal plan cell under renju etc. — try a search move.
-          final (r2, c2) = await Difficulty.selected.value.aiMove(ruleset, Board.state.value);
+          final (r2, c2) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value);
           final gameOver2 = Board.commitMark(r2, c2, mark, ruleset, byAi: true);
           if (gameOver2 == null) continue;
           await Board.animatePlacement();

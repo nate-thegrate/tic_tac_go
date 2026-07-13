@@ -2,15 +2,26 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/renju.dart';
+import 'package:tic_tac_go/src/rules/renju.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 final twoPlayer = Get.it(false);
 
-typedef _AiInput = ({List<List<PlayerMark?>> board, int winLength, Ruleset ruleset});
-typedef _Cell = (int row, int col);
-typedef _OpenThreats = ({int openFours, int openThrees});
+Future<(int row, int col)> aiMove(Difficulty difficulty, Ruleset ruleset, BoardData data) async {
+  final winLength = ruleset.winLength(data);
+  final board = [for (final row in data) List<PlayerMark?>.of(row)];
+  final input = (board: board, winLength: winLength, ruleset: ruleset);
+
+  return switch (difficulty) {
+    // Win → block → random. SynchronousFuture (no isolate).
+    .easy => SynchronousFuture(_aiEasy(input)),
+    // Win → block → defend threats → attack → rank open-segment ends.
+    .hard => compute(_aiHard, input),
+    // Hard's option set, then symmetry / multi-ply search on ties.
+    .brutal => compute(_aiBrutal, input),
+  };
+}
 
 enum Difficulty {
   easy,
@@ -22,24 +33,13 @@ enum Difficulty {
 
   static final selected = Get.it(easy);
 
-  Future<(int row, int col)> aiMove(Ruleset ruleset, BoardData data) async {
-    final winLength = ruleset.winLength(data);
-    final board = [for (final row in data) List<PlayerMark?>.of(row)];
-    final input = (board: board, winLength: winLength, ruleset: ruleset);
-
-    return switch (this) {
-      // Win → block → random. SynchronousFuture (no isolate).
-      easy => SynchronousFuture(_aiEasy(input)),
-      // Win → block → defend threats → attack → rank open-segment ends.
-      hard => compute(_aiHard, input),
-      // Hard's option set, then symmetry / multi-ply search on ties.
-      brutal => compute(_aiBrutal, input),
-    };
-  }
-
   @override
   String toString() => name[0].toUpperCase() + name.substring(1);
 }
+
+typedef _AiInput = ({List<List<PlayerMark?>> board, int winLength, Ruleset ruleset});
+typedef _Cell = (int row, int col);
+typedef _OpenThreats = ({int openFours, int openThrees});
 
 extension<T> on List<T> {
   T get random {
@@ -95,8 +95,7 @@ bool _boardIsFull(List<List<PlayerMark?>> board) {
   return true;
 }
 
-_Cell _centerMove(List<List<PlayerMark?>> board) =>
-    (board.length ~/ 2, board.first.length ~/ 2);
+_Cell _centerMove(List<List<PlayerMark?>> board) => (board.length ~/ 2, board.first.length ~/ 2);
 
 int _markCount(List<List<PlayerMark?>> board, PlayerMark mark) {
   var count = 0;
@@ -337,11 +336,7 @@ Set<_Cell> _openRunEnds(List<List<PlayerMark?>> board, int runLength, {PlayerMar
 }
 
 /// Open fours (winLength−1) and open threes (winLength−2) for [player].
-_OpenThreats _countOpenThreats(
-  List<List<PlayerMark?>> board,
-  int winLength,
-  PlayerMark player,
-) {
+_OpenThreats _countOpenThreats(List<List<PlayerMark?>> board, int winLength, PlayerMark player) {
   return (
     openFours: _openRuns(board, winLength - 1, onlyMark: player).length,
     openThrees: _openRuns(board, winLength - 2, onlyMark: player).length,
@@ -460,14 +455,7 @@ int _moveRank(
 
   final denyBonus = _withMark(board, row, col, toMove.opponent, () {
     final threats = _countOpenThreats(board, winLength, toMove.opponent);
-    final immediate = _immediateWinCountNear(
-      board,
-      row,
-      col,
-      toMove.opponent,
-      winLength,
-      ruleset,
-    );
+    final immediate = _immediateWinCountNear(board, row, col, toMove.opponent, winLength, ruleset);
     return _threatBonus(threats, openFour: 400, openThree: 40) + immediate * 250;
   });
 
@@ -577,7 +565,13 @@ _Cell _aiEasy(_AiInput input) {
   final wins = _winningPlacements(board, pool, ai, winLength, ruleset);
   if (wins.isNotEmpty) return wins.random;
 
-  final blocks = _winningPlacements(board, _movePool(board, winLength), ai.opponent, winLength, ruleset);
+  final blocks = _winningPlacements(
+    board,
+    _movePool(board, winLength),
+    ai.opponent,
+    winLength,
+    ruleset,
+  );
   final legalBlocks = [
     for (final m in blocks)
       if (_isLegalAiMove(board, m.$1, m.$2, ai, ruleset)) m,
@@ -629,7 +623,10 @@ List<_Cell Function(_Cell)> _boardSymmetries(List<List<PlayerMark?>> board) {
     return true;
   }
 
-  return [for (final transform in transforms) if (preserves(transform)) transform];
+  return [
+    for (final transform in transforms)
+      if (preserves(transform)) transform,
+  ];
 }
 
 bool _movesAreSymmetricallyEquivalent(List<List<PlayerMark?>> board, List<_Cell> moves) {
@@ -677,7 +674,8 @@ int _brutalSearchDepth(List<List<PlayerMark?>> board, int optionCount) {
 int _brutalHeuristic(List<List<PlayerMark?>> board, int winLength, PlayerMark rootAi) {
   final us = _countOpenThreats(board, winLength, rootAi);
   final them = _countOpenThreats(board, winLength, rootAi.opponent);
-  return _threatBonus(us, openFour: 50, openThree: 5) - _threatBonus(them, openFour: 50, openThree: 5);
+  return _threatBonus(us, openFour: 50, openThree: 5) -
+      _threatBonus(them, openFour: 50, openThree: 5);
 }
 
 int _brutalEvaluate(

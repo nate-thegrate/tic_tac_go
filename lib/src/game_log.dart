@@ -11,9 +11,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/difficulty.dart';
+import 'package:tic_tac_go/src/ai_move.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 /// One committed placement in the current game (survives [Board.history] clears).
 class GameLogMove {
