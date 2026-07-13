@@ -1,3 +1,6 @@
+/// @docImport './rules/connect6.dart';
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -145,11 +148,7 @@ bool _isWinningPlacement(
 ) {
   final cell = (row, col);
   if (!cell.isLegalOn(board, mark, ruleset)) return false;
-  return cell.withMark(
-    board,
-    mark,
-    () => cell.formsWin(board, mark, winLength, ruleset: ruleset),
-  );
+  return cell.withMark(board, mark, () => cell.formsWin(board, mark, winLength, ruleset: ruleset));
 }
 
 List<_Cell> _winningPlacements(
@@ -403,8 +402,7 @@ List<_Cell> _hardMoveOptions(
   Ruleset ruleset,
   PlayerMark ai,
 ) {
-  if (board.isBoardEmpty) return [board.centerCell];
-
+  // Empty board → center via [_candidateMoves] / [_legalPool].
   final pool = _legalPool(board, winLength, ruleset, ai);
   if (pool.isEmpty) {
     // No legal moves (extreme renju edge case) — fall back to any empty.
@@ -457,8 +455,7 @@ List<_Cell> _hardMoveOptions(
 
 _Cell _aiEasy(_AiInput input) {
   final (:board, :winLength, :ruleset, :toMove) = input;
-  if (board.isBoardEmpty) return board.centerCell;
-
+  // Empty board → center via [_legalPool] / [_candidateMoves].
   final pool = _legalPool(board, winLength, ruleset, toMove);
   assert(pool.isNotEmpty, 'AI called on a full board');
 
@@ -484,7 +481,6 @@ _Cell _aiEasy(_AiInput input) {
 
 _Cell _aiHard(_AiInput input) {
   final (:board, :winLength, :ruleset, :toMove) = input;
-  if (board.isBoardEmpty) return board.centerCell;
   final options = _hardMoveOptions(board, winLength, ruleset, toMove);
   assert(options.isNotEmpty, 'AI called on a full board');
   return options.random;
@@ -604,10 +600,9 @@ int _brutalEvaluate(
 
 _Cell _aiBrutal(_AiInput input) {
   final (:board, :winLength, :ruleset, :toMove) = input;
-  if (board.isBoardEmpty) return board.centerCell;
-
   final options = _hardMoveOptions(board, winLength, ruleset, toMove);
   assert(options.isNotEmpty, 'AI called on a full board');
+  // Empty board / sole option / symmetry: no multi-ply search needed.
   if (options.length == 1 || _movesAreSymmetricallyEquivalent(board, options)) {
     return options.random;
   }

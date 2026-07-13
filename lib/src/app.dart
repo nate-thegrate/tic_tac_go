@@ -62,8 +62,6 @@ class App extends StatelessWidget {
     final Gradient gradient;
     if (start < end) {
       gradient = LinearGradient(
-        begin: .centerLeft,
-        end: .centerRight,
         colors: const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
         stops: [start, end],
       );

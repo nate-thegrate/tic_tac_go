@@ -64,7 +64,7 @@ enum Ruleset {
         ],
       ),
       renju when minBoardDimension < 5 => throw StateError(
-        'Can\'t pick renju with board dimension of $minBoardDimension',
+        "Can't pick renju with board dimension of $minBoardDimension",
       ),
       renju => (
         label: 'renju',
@@ -74,16 +74,15 @@ enum Ruleset {
             '${isGoMode ? 'black player to offset the advantage of going first' : 'first player to offset their advantage'}:',
           ),
           _RulesList([
-            'They can\'t simultaneously form two rows of 3 $stones '
+            "They can't simultaneously form two rows of 3 $stones "
                 'if both rows are unblocked on either side',
-            'They can\'t ever simultaneously form two rows of 4 $stones',
-            'They must have exactly 5 in a row in order to win '
-                '(6 or more doesn\'t count)',
+            "They can't ever simultaneously form two rows of 4 $stones",
+            "They must have exactly 5 in a row in order to win (6 or more doesn't count)",
           ]),
         ],
       ),
       connect6 when minBoardDimension < 6 => throw StateError(
-        'Can\'t pick connect6 with board dimension of $minBoardDimension',
+        "Can't pick connect6 with board dimension of $minBoardDimension",
       ),
       connect6 => (
         label: 'connect 6',

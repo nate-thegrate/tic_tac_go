@@ -151,7 +151,7 @@ class BottomBar extends StatelessWidget {
               const arrowWidth = 12.0;
 
               final Offset(:dx, :dy) = size.center(Offset.zero);
-              final angle = 5 * math.pi / 6;
+              const angle = 5 * math.pi / 6;
               final transform = Matrix4.identity()
                 ..translateByDouble(dx, dy, 0, 1)
                 ..rotateZ(angle)
@@ -256,7 +256,7 @@ class BottomBar extends StatelessWidget {
                 final total = Connect6.stonesNeeded(player, ref.watch(Board.state));
                 final status = usersTurn
                     ? 'YOUR MOVE'
-                    : '${player.toString(goMode: isGoMode)}\'s move';
+                    : "${player.toString(goMode: isGoMode)}'s move";
                 textSpan = TextSpan(text: total > 1 ? '$status · ${placed + 1}/$total' : status);
               } else {
                 textSpan = TextSpan(
@@ -266,7 +266,7 @@ class BottomBar extends StatelessWidget {
                       ? 'DRAW!'
                       : usersTurn
                       ? 'YOUR MOVE'
-                      : ' $playerText\'s move ',
+                      : " $playerText's move ",
                 );
               }
 

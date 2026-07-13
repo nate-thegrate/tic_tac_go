@@ -102,12 +102,7 @@ extension BoardCell on (int row, int col) {
   /// Contiguous [mark] count through this cell along [dRow],[dCol] (both ways).
   ///
   /// This cell is assumed to hold [mark] (not re-checked).
-  int runLengthThrough(
-    List<List<PlayerMark?>> board,
-    PlayerMark mark,
-    int dRow,
-    int dCol,
-  ) {
+  int runLengthThrough(List<List<PlayerMark?>> board, PlayerMark mark, int dRow, int dCol) {
     final (row, col) = this;
     var count = 1;
     for (final sign in const [1, -1]) {
@@ -164,9 +159,7 @@ extension BoardCell on (int row, int col) {
       if (!isWinningRunLength(length, mark, winLength, ruleset)) continue;
 
       final take = ruleset == .renju && mark == .x ? 5 : winLength;
-      return [
-        for (var i = 0; i < take; i++) (startRow + i * dRow, startCol + i * dCol),
-      ];
+      return [for (var i = 0; i < take; i++) (startRow + i * dRow, startCol + i * dCol)];
     }
     return null;
   }
@@ -244,9 +237,7 @@ extension BoardGrid on List<List<PlayerMark?>> {
   (int row, int col) get centerCell => (length ~/ 2, first.length ~/ 2);
 
   /// Deep copy of each row (mutable), for AI search / renju trial places.
-  List<List<PlayerMark?>> copyMutable() => [
-    for (final row in this) List<PlayerMark?>.of(row),
-  ];
+  List<List<PlayerMark?>> copyMutable() => [for (final row in this) List<PlayerMark?>.of(row)];
 
   List<(int row, int col)> get emptyCells => [
     for (var row = 0; row < length; row++)
@@ -301,7 +292,7 @@ extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<P
   }
 
   /// If one of the players has won (by having a number of items in a row, straight or diagonally,
-  /// equal to [winLength]), this getter returns that player; returns `null` otherwise.
+  /// equal to [Ruleset.winLength]), this getter returns that player; returns `null` otherwise.
   PlayerMark? winner(Ruleset ruleset) => switch (winningRun(ruleset)?.firstOrNull) {
     (-1, -1) => null,
     (final row, final col) => _list[row][col],
@@ -585,8 +576,8 @@ class Board extends StatelessWidget {
   /// optionally switches [turn] / runs the game-end sequence.
   ///
   /// Returns `null` if the placement is illegal. Otherwise:
-  /// - [gameOver]: true if the game ended ([runGameEndSequence] already awaited)
-  /// - [turnDone]: whether this player's turn is complete (always true outside connect6)
+  /// - `gameOver`: true if the game ended ([runGameEndSequence] already awaited)
+  /// - `turnDone`: whether this player's turn is complete (always true outside connect6)
   ///
   /// Set [advanceTurn] to false when the caller manages turn/phase itself (e.g. swap2).
   /// [onGameOver] runs after Connect6 reset and before the end-sequence animation.
