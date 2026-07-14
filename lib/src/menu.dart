@@ -84,6 +84,38 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
   }
 }
 
+/// Back chevron / Esc: leave play or go to the previous menu page.
+void goBack([_]) {
+  if (playing.value) {
+    Board.backToMenu();
+  } else {
+    final page = MenuPage.current;
+    if (page.value.index == 0) return;
+    page.value = MenuPage.values[page.value.index - 1];
+  }
+  BottomBar.backTransition.reverse(from: 1);
+}
+
+/// Center strip / Enter: next menu page, start game, or toggle swap2 options.
+void primaryAction([_]) {
+  if (playing.value) {
+    if (Swap2.isChoosing) {
+      Swap2.toggleOptionsView();
+    }
+    return;
+  }
+
+  switch (MenuPage.current.value) {
+    case .players:
+      MenuPage.current.value = .boardSize;
+    case .boardSize:
+      MenuPage.current.value = .rules;
+    case .rules:
+      playing.value = true;
+      Board.beginGame();
+  }
+}
+
 class BottomBar extends StatelessWidget {
   const BottomBar({super.key});
 
@@ -112,18 +144,7 @@ class BottomBar extends StatelessWidget {
       children: [
         GestureDetector(
           behavior: .opaque,
-          onPanDown: (_) {
-            if (playing.value) {
-              Board.backToMenu();
-            } else {
-              final page = MenuPage.current;
-              if (page.value.index == 0) {
-                return;
-              }
-              page.value = MenuPage.values[math.max(page.value.index - 1, 0)];
-            }
-            backTransition.reverse(from: 1);
-          },
+          onPanDown: goBack,
           child: SizedBox.square(
             dimension: height,
             child: RefPaint((ref) {
@@ -212,24 +233,7 @@ class BottomBar extends StatelessWidget {
         Expanded(
           child: GestureDetector(
             behavior: .opaque,
-            onPanDown: (details) {
-              if (playing.value) {
-                if (Swap2.isChoosing) {
-                  Swap2.toggleOptionsView();
-                }
-                return;
-              }
-
-              switch (MenuPage.current.value) {
-                case .players:
-                  MenuPage.current.value = .boardSize;
-                case .boardSize:
-                  MenuPage.current.value = .rules;
-                case .rules:
-                  playing.value = true;
-                  Board.beginGame();
-              }
-            },
+            onPanDown: primaryAction,
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
               final ruleset = ref.watch(Ruleset.current);
