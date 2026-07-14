@@ -101,6 +101,9 @@ class BottomBar extends StatelessWidget {
     );
   }
 
+  static final undoTransition = Get.vsync();
+  static final backTransition = Get.vsync();
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -112,14 +115,20 @@ class BottomBar extends StatelessWidget {
           onPanDown: (_) {
             if (playing.value) {
               Board.backToMenu();
-              return;
+            } else {
+              final page = MenuPage.current;
+              if (page.value.index == 0) {
+                return;
+              }
+              page.value = MenuPage.values[math.max(page.value.index - 1, 0)];
             }
-            MenuPage.current.value = MenuPage.values[math.max(MenuPage.current.value.index - 1, 0)];
+            backTransition.reverse(from: 1);
           },
           child: SizedBox.square(
             dimension: height,
             child: RefPaint((ref) {
-              if (ref.select(MenuPage.current, (page) => page == .players)) return;
+              final t = Curves.easeInSine.transform(ref.watch(backTransition));
+              final disappearing = ref.select(MenuPage.current, (page) => page == .players);
               final PaintRef(:canvas, size: Size(:width, :height)) = ref;
               const strokeWidth = 5.0;
               const xPad = 16.0;
@@ -129,14 +138,16 @@ class BottomBar extends StatelessWidget {
                 ..style = .stroke
                 ..strokeWidth = strokeWidth
                 ..strokeCap = .round
-                ..color = const Black();
-              canvas.drawPath(
-                Path()
-                  ..moveTo(width - xPad, yPad)
-                  ..lineTo(xPad, height / 2)
-                  ..lineTo(width - xPad, height - yPad),
-                strokePaint,
-              );
+                ..color = Black(disappearing ? t : 1);
+              canvas
+                ..translate(-t * 10, 0)
+                ..drawPath(
+                  Path()
+                    ..moveTo(width - xPad, yPad)
+                    ..lineTo(xPad, height / 2)
+                    ..lineTo(width - xPad, height - yPad),
+                  strokePaint,
+                );
             }),
           ),
         ),
@@ -150,8 +161,17 @@ class BottomBar extends StatelessWidget {
               const strokeWidth = 5.0;
               const arrowWidth = 12.0;
 
+              final t = ref.watch(undoTransition..duration = const Duration(milliseconds: 400));
+              const shrinkTime = 1 / 3;
+              final double shrinkProgress = Curves.easeInSine.transform(
+                math.min(t / shrinkTime, 1),
+              );
+              final double growProgress = Curves.ease.transform(
+                math.max((t - shrinkTime) / (1 - shrinkTime), 0),
+              );
+
               final Offset(:dx, :dy) = size.center(Offset.zero);
-              const angle = 5 * math.pi / 6;
+              final angle = (5 / 12 - growProgress) * 2 * math.pi;
               final transform = Matrix4.identity()
                 ..translateByDouble(dx, dy, 0, 1)
                 ..rotateZ(angle)
@@ -175,8 +195,8 @@ class BottomBar extends StatelessWidget {
                 )
                 ..drawArc(
                   arcRect,
-                  0,
-                  -math.pi * 3 / 2,
+                  -math.pi * 3 / 2 * (shrinkProgress - growProgress),
+                  -math.pi * 3 / 2 * (1 - shrinkProgress + growProgress),
                   false,
                   paint
                     ..style = .stroke

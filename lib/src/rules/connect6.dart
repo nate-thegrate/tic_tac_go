@@ -53,4 +53,45 @@ abstract final class Connect6 {
     final pairIndex = k ~/ 2;
     Board.turn.value = pairIndex.isEven ? .o : .x;
   }
+
+  /// Undo one stone, or a full prior turn (and the human's, in 1-player).
+  static void undo(void Function() undoStoneOnly) {
+    if (stonesThisTurn.value > 0) {
+      // Mid-turn: revert only the last stone of the current player.
+      undoStoneOnly();
+      recomputeTurnFromBoard(Board.state.value);
+      return;
+    }
+
+    // Start of a turn: undo the previous player's full turn.
+    PlayerMark? lastMark;
+    var undone = 0;
+    while (Board.history.isNotEmpty && undone < 2) {
+      final (row, col) = Board.history.last;
+      final mark = Board.state.value[row][col];
+      if (mark == null) break;
+      if (lastMark == null) {
+        lastMark = mark;
+      } else if (mark != lastMark) {
+        break;
+      }
+      undoStoneOnly();
+      undone++;
+    }
+
+    // In 1-player, also undo the human's full turn when undoing an AI reply.
+    final human = Board.humanPlayer.value;
+    if (human != null && lastMark != null && lastMark != human && Board.history.isNotEmpty) {
+      undone = 0;
+      while (Board.history.isNotEmpty && undone < 2) {
+        final (row, col) = Board.history.last;
+        final mark = Board.state.value[row][col];
+        if (mark != human) break;
+        undoStoneOnly();
+        undone++;
+      }
+    }
+
+    recomputeTurnFromBoard(Board.state.value);
+  }
 }

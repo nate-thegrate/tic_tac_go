@@ -144,6 +144,7 @@ class Board extends StatelessWidget {
 
   static void undo([_]) {
     if (inputLocked || history.isEmpty || Swap2.isChoosing) return;
+    BottomBar.undoTransition.forward(from: 0);
 
     void undoOnce() {
       if (history.isEmpty) return;
@@ -164,7 +165,7 @@ class Board extends StatelessWidget {
     }
 
     if (Connect6.isActive) {
-      _undoConnect6(undoStoneOnly);
+      Connect6.undo(undoStoneOnly);
       return;
     }
 
@@ -172,47 +173,6 @@ class Board extends StatelessWidget {
     final undoAiAndUser = humanPlayer.value != null && turn.value == humanPlayer.value;
     undoOnce();
     if (undoAiAndUser && history.isNotEmpty) undoOnce();
-  }
-
-  /// Undo one stone, or a full prior turn (and the human's, in 1-player).
-  static void _undoConnect6(void Function() undoStoneOnly) {
-    if (Connect6.stonesThisTurn.value > 0) {
-      // Mid-turn: revert only the last stone of the current player.
-      undoStoneOnly();
-      Connect6.recomputeTurnFromBoard(state.value);
-      return;
-    }
-
-    // Start of a turn: undo the previous player's full turn.
-    PlayerMark? lastMark;
-    var undone = 0;
-    while (history.isNotEmpty && undone < 2) {
-      final (row, col) = history.last;
-      final mark = state.value[row][col];
-      if (mark == null) break;
-      if (lastMark == null) {
-        lastMark = mark;
-      } else if (mark != lastMark) {
-        break;
-      }
-      undoStoneOnly();
-      undone++;
-    }
-
-    // In 1-player, also undo the human's full turn when undoing an AI reply.
-    final human = humanPlayer.value;
-    if (human != null && lastMark != null && lastMark != human && history.isNotEmpty) {
-      undone = 0;
-      while (history.isNotEmpty && undone < 2) {
-        final (row, col) = history.last;
-        final mark = state.value[row][col];
-        if (mark != human) break;
-        undoStoneOnly();
-        undone++;
-      }
-    }
-
-    Connect6.recomputeTurnFromBoard(state.value);
   }
 
   static Future<void> runGameEndSequence(Ruleset ruleset) async {
