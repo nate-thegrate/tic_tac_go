@@ -196,20 +196,33 @@ class Backdrop extends StatelessWidget {
 
     Widget layoutBuilder(BuildContext context, BoxConstraints constraints) {
       final maxSize = constraints.biggest;
-      final padding = maxSize.shortestSide / 32;
+      final pad = maxSize.shortestSide / 32;
+      var data = MediaQuery.of(context);
+      var padding = data.padding;
+      padding = EdgeInsets.fromLTRB(
+        math.max(padding.left, pad),
+        math.max(padding.top, pad),
+        math.max(padding.right, pad),
+        math.max(padding.bottom, pad),
+      );
+      data = data.copyWith(padding: .zero);
 
-      if (maxSize.width - 2 * padding >= BottomBar.minWidth) {
-        return Padding(
-          padding: .all(padding),
-          child: Center(child: content),
-        );
-      }
+      const minHeight = 650.0;
+      final availableWidth = maxSize.width - padding.left - padding.right;
+      final availableHeight = maxSize.height - padding.top - padding.bottom;
+      final wideEnough = availableWidth >= BottomBar.minWidth;
+      final tallEnough = availableHeight >= minHeight;
 
-      final maxHeight =
-          (maxSize.height - 2 * padding) * BottomBar.minWidth / (maxSize.width - 2 * padding);
-      return Padding(
-        padding: .all(padding),
-        child: FittedBox(
+      // When both dimensions are short, pick the tighter scale so size stays
+      // continuous with the single-constraint fitWidth/fitHeight cases.
+      final widthIsTighter = availableWidth * minHeight <= availableHeight * BottomBar.minWidth;
+
+      final Widget widget;
+      if (wideEnough && tallEnough) {
+        widget = Center(child: content);
+      } else if (!wideEnough && (tallEnough || widthIsTighter)) {
+        final maxHeight = availableHeight * BottomBar.minWidth / availableWidth;
+        widget = FittedBox(
           fit: .fitWidth,
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -219,16 +232,30 @@ class Backdrop extends StatelessWidget {
             ),
             child: content,
           ),
-        ),
+        );
+      } else {
+        final maxWidth = availableWidth * minHeight / availableHeight;
+        widget = FittedBox(
+          fit: .fitHeight,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: minHeight,
+              maxHeight: minHeight,
+              maxWidth: maxWidth,
+            ),
+            child: content,
+          ),
+        );
+      }
+      return Padding(
+        padding: padding,
+        child: MediaQuery(data: data, child: widget),
       );
     }
 
     return GetScope(
       substitutes: {Substitution.value(goMode, isGoMode)},
-      child: RefPaint(
-        paintBackdrop,
-        child: SafeArea(child: LayoutBuilder(builder: layoutBuilder)),
-      ),
+      child: RefPaint(paintBackdrop, child: LayoutBuilder(builder: layoutBuilder)),
     );
   }
 }
