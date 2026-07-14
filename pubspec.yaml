@@ -9,10 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  get_hooked:
-    path: ../get_hooked/packages/get_hooked
-  get_hooked_storage:
-    path: ../get_hooked/packages/get_hooked_storage
+  get_hooked: ^0.5.1
+    # path: ../get_hooked/packages/get_hooked
+  get_hooked_storage: ^0.1.0
+    # path: ../get_hooked/packages/get_hooked_storage
   marionette_flutter: ^0.6.0
   meta: ^1.18.0
   shared_preferences: ^2.5.5
