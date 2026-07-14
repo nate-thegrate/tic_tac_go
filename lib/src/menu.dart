@@ -179,8 +179,10 @@ class BottomBar extends StatelessWidget {
 
               final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
               final playingAlpha = math.max(ref.watch(playingTransition) * 2 - 1, 0.0);
-              final hasHistory = ref.select(Board.history, (history) => history.isNotEmpty);
-              final paint = Paint()..color = Black(hasHistory ? playingAlpha : 0.0);
+              // Recompute when history changes; [Board.canUndo] also depends on
+              // human side / board marks (AI-only openings are not undoable).
+              final undoAvailable = ref.select(Board.history, (_) => Board.canUndo);
+              final paint = Paint()..color = Black(undoAvailable ? playingAlpha : 0.0);
 
               canvas
                 ..save()

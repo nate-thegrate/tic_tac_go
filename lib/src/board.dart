@@ -142,8 +142,21 @@ class Board extends StatelessWidget {
     turn.value = .x;
   }
 
+  static bool get canUndo {
+    if (history.isEmpty || Swap2.isChoosing) return false;
+
+    final human = humanPlayer.value;
+    if (human == null) return true;
+
+    final board = state.value;
+    for (final (row, col) in history) {
+      if (board[row][col] == human) return true;
+    }
+    return false;
+  }
+
   static void undo([_]) {
-    if (inputLocked || history.isEmpty || Swap2.isChoosing) return;
+    if (inputLocked || !canUndo) return;
     BottomBar.undoTransition.forward(from: 0);
 
     void undoOnce() {
