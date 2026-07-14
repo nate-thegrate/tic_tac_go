@@ -99,19 +99,17 @@ packages:
   get_hooked:
     dependency: "direct main"
     description:
-      name: get_hooked
-      sha256: "2a10ce3374d29228d8028b67dcbb84540ae5d21b8668fd8d972d8726c1c18826"
-      url: "https://pub.dev"
-    source: hosted
+      path: "../get_hooked/packages/get_hooked"
+      relative: true
+    source: path
     version: "0.5.1"
   get_hooked_storage:
     dependency: "direct main"
     description:
-      name: get_hooked_storage
-      sha256: "52438324bc315c4fe223d1c29dcc2bc2b7a3567b3733fd33fc1027e7d7466382"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0"
+      path: "../get_hooked/packages/get_hooked_storage"
+      relative: true
+    source: path
+    version: "0.1.1"
   leak_tracker:
     dependency: transitive
     description:

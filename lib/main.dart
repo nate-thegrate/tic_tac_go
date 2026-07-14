@@ -12,6 +12,7 @@ void main() async {
   } else {
     WidgetsFlutterBinding.ensureInitialized();
   }
+
   await (loadShaders(), loadPrefs()).wait;
   HardwareKeyboard.instance.addHandler(handleKeyEvent);
   runApp(const App());

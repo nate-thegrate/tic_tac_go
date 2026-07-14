@@ -43,9 +43,11 @@ When in doubt, read more.
 
 ## Coding style
 
-Use [dot shorthands](https://dart.dev/language/dot-shorthands) when passing arguments to named parameters (but avoid shortening an unnamed constructor to `.new()`).
+Use [dot shorthands](https://dart.dev/language/dot-shorthands) to improve readability, for instance when passing arguments to named parameters. (Avoid shortening unnamed constructors to `.new()`).
 
-Prefer [destructuring class instances](https://dart.dev/language/patterns#destructuring-class-instances) when using a single object to assign multiple local variables. Avoid using 1 or 2-letter variable names.
+Avoid defining global or `static` fields that are only used once, if they can just be inlined.
+
+Avoid using 1 or 2-letter variable names. Prefer [destructuring class instances](https://dart.dev/language/patterns#destructuring-class-instances) when using a single object to assign multiple local variables.
 
 ```dart
 void foo(Rect rect) {

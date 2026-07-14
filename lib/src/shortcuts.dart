@@ -1,3 +1,6 @@
+/// @docImport 'package:tic_tac_go/main.dart';
+library;
+
 import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
@@ -9,7 +12,7 @@ import 'package:tic_tac_go/src/rules/swap2.dart';
 
 /// App-wide keyboard shortcuts.
 ///
-/// Register once from `main` via `HardwareKeyboard.instance.addHandler`.
+/// Registered once from [main] via [HardwareKeyboard.addHandler].
 bool handleKeyEvent(KeyEvent event) {
   if (event is! KeyDownEvent) return false;
 
