@@ -6,10 +6,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:get_hooked/get_hooked.dart';
+import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
-final twoPlayer = Get.it(false);
+final twoPlayer = Stored('two player', false);
 
 /// Chooses a cell for [toMove] under [ruleset] / [difficulty].
 ///
@@ -43,7 +44,7 @@ enum Difficulty {
   /// The user's chosen difficulty.
   static final current = Get.compute((ref) => ref.watch(twoPlayer) ? null : ref.watch(selected));
 
-  static final selected = Get.it(easy);
+  static final selected = Stored.enumValue(values, easy);
 
   @override
   String toString() => name[0].toUpperCase() + name.substring(1);

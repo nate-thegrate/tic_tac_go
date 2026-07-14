@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:get_hooked/get_hooked.dart';
+import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:tic_tac_go/src/board.dart';
 
 enum Ruleset {
@@ -109,7 +109,7 @@ enum Ruleset {
     return this == connect6 ? 6 : math.min(math.min(rows, cols), 5);
   }
 
-  static final current = Get.it(gomoku);
+  static final current = Stored.enumValue(values, gomoku);
 }
 
 class _RulesList extends StatelessWidget {
