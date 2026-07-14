@@ -35,13 +35,12 @@ enum PlayerMark {
     o => const Color(0xFFFFFFFF),
   };
 
-  String get goMode => switch (this) {
+  @override
+  String toString({bool goMode = false}) => switch (this) {
+    _ when !goMode => name.toUpperCase(),
     x => 'Black',
     o => 'White',
   };
-
-  @override
-  String toString({bool goMode = false}) => goMode ? this.goMode : name.toUpperCase();
 }
 
 /// Whether [length] counts as a win for [mark] under [ruleset] / [winLength].
@@ -88,7 +87,7 @@ extension BoardCell on (int row, int col) {
     final (row, col) = this;
     if (!inBounds(board) || board[row][col] != null) return false;
     if (ruleset == .renju && mark == .x) {
-      return Renju.foulIfBlackPlays(board, row, col) == null;
+      return !Renju.foulIfBlackPlays(board, row, col);
     }
     return true;
   }

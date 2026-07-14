@@ -7,15 +7,15 @@ import 'package:tic_tac_go/src/player_mark.dart';
 /// A move that creates an exact five is always legal and wins, even if it also
 /// forms a double-three or double-four (the classic 4×3 is allowed).
 abstract final class Renju {
-  /// Returns a foul if black placing at [row],[col] is illegal.
+  /// Whether black placing at [row],[col] is a foul (illegal).
   ///
   /// [board] must be empty at [row],[col]; the stone is not yet placed.
   /// Overlines are not fouls — they simply do not win (see [BoardData.winningRun]).
-  static RenjuFoul? foulIfBlackPlays(List<List<PlayerMark?>> board, int row, int col) {
+  static bool foulIfBlackPlays(List<List<PlayerMark?>> board, int row, int col) {
     assert(board[row][col] == null);
     return (row, col).withMark(board, .x, () {
       // Exact five wins and is never a foul.
-      if (_hasExactFiveThrough(board, row, col, .x)) return null;
+      if (_hasExactFiveThrough(board, row, col, .x)) return false;
 
       var openThrees = 0;
       var fours = 0;
@@ -23,9 +23,7 @@ abstract final class Renju {
         if (_isOpenThreeThrough(board, row, col, dRow, dCol, .x)) openThrees++;
         if (_isFourThrough(board, row, col, dRow, dCol, .x)) fours++;
       }
-      if (fours >= 2) return .doubleFour;
-      if (openThrees >= 2) return .doubleThree;
-      return null;
+      return fours >= 2 || openThrees >= 2;
     });
   }
 
@@ -91,14 +89,4 @@ abstract final class Renju {
     final b = _endBeyondRun(board, row, col, -dRow, -dCol, mark);
     return a != null || b != null;
   }
-}
-
-enum RenjuFoul {
-  doubleThree,
-  doubleFour;
-
-  String get label => switch (this) {
-    doubleThree => 'double-three',
-    doubleFour => 'double-four',
-  };
 }

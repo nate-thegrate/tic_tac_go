@@ -27,7 +27,7 @@ void main() {
     b[5][7] = PlayerMark.x;
     b[6][7] = PlayerMark.x;
     // (7,7) completes both open threes
-    expect(Renju.foulIfBlackPlays(b, 7, 7), RenjuFoul.doubleThree);
+    expect(Renju.foulIfBlackPlays(b, 7, 7), isTrue);
   });
 
   test('black exact five is legal and not a foul', () {
@@ -37,7 +37,7 @@ void main() {
     b[7][5] = PlayerMark.x;
     b[7][6] = PlayerMark.x;
     // Place (7,7) for exact five
-    expect(Renju.foulIfBlackPlays(b, 7, 7), isNull);
+    expect(Renju.foulIfBlackPlays(b, 7, 7), isFalse);
   });
 
   test('black overline is legal but not a foul', () {
@@ -46,7 +46,7 @@ void main() {
       b[7][c] = PlayerMark.x;
     }
     // five already; placing at (7,7) makes six — allowed, just not a win
-    expect(Renju.foulIfBlackPlays(b, 7, 7), isNull);
+    expect(Renju.foulIfBlackPlays(b, 7, 7), isFalse);
     expect((7, 7).isLegalOn(b, PlayerMark.x, Ruleset.renju), isTrue);
   });
 

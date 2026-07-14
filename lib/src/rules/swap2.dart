@@ -36,17 +36,12 @@ abstract final class Swap2 {
   /// Whether the physical first player is the human (1-player); unused in 2-player.
   static var firstPlayerIsHuman = true;
 
-  /// Opening marks: black, white, black.
-  static const openingMarks = <PlayerMark>[.x, .o, .x];
-
-  /// Extra two marks after "add 2 moves": white, black.
-  static const extraMarks = <PlayerMark>[.o, .x];
-
-  static bool get isActive => phase.value != .none;
   static bool get isChoosing => phase.value == .chooseAfter3 || phase.value == .chooseAfter5;
   static bool get isPlacing => phase.value == .opening3 || phase.value == .extra2;
 
-  static List<PlayerMark> get currentMarks => phase.value == .extra2 ? extraMarks : openingMarks;
+  /// Marks for the current placement phase: opening3 is BWB; extra2 is WB.
+  static List<PlayerMark> get currentMarks =>
+      phase.value == .extra2 ? const [.o, .x] : const [.x, .o, .x];
 
   static PlayerMark get nextMark => currentMarks[placedInPhase.value];
 
