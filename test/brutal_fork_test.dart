@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 List<List<PlayerMark?>> emptyBoard(int rows, int cols) =>

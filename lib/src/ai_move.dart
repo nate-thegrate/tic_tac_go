@@ -1,3 +1,4 @@
+/// @docImport './board.dart';
 /// @docImport './rules/connect6.dart';
 library;
 
@@ -5,7 +6,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 final twoPlayer = Get.it(false);
@@ -20,7 +21,7 @@ Future<(int row, int col)> aiMove(
   BoardData data,
   PlayerMark toMove,
 ) {
-  final winLength = ruleset.winLength(data);
+  final winLength = ruleset.winLengthForSize(data.rows, data.cols);
   final board = data.copyMutable();
   final input = (board: board, winLength: winLength, ruleset: ruleset, toMove: toMove);
 

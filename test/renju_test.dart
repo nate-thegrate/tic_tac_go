@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/renju.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
@@ -47,7 +47,7 @@ void main() {
     }
     // five already; placing at (7,7) makes six — allowed, just not a win
     expect(Renju.foulIfBlackPlays(b, 7, 7), isNull);
-    expect(Renju.isLegalFor(PlayerMark.x, b, 7, 7), isTrue);
+    expect((7, 7).isLegalOn(b, PlayerMark.x, Ruleset.renju), isTrue);
   });
 
   test('white has no fouls', () {
@@ -56,7 +56,7 @@ void main() {
     b[7][6] = PlayerMark.o;
     b[5][7] = PlayerMark.o;
     b[6][7] = PlayerMark.o;
-    expect(Renju.isLegalFor(PlayerMark.o, b, 7, 7), isTrue);
+    expect((7, 7).isLegalOn(b, PlayerMark.o, Ruleset.renju), isTrue);
   });
 
   test('BoardData renju: black overline does not win', () {

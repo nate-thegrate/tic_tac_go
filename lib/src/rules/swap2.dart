@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
-import 'package:tic_tac_go/src/game_log.dart' as game_log;
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 /// Swap2 opening / color-choice flow.
@@ -117,7 +116,6 @@ abstract final class Swap2 {
     if (Board.humanPlayer.value != null) {
       final chooserIsHuman = chooserIsFirst ? firstPlayerIsHuman : !firstPlayerIsHuman;
       Board.humanPlayer.value = chooserIsHuman ? chooserPlaysAs : chooserPlaysAs.opponent;
-      game_log.setHuman(Board.humanPlayer.value);
     }
 
     phase.value = .none;
@@ -189,7 +187,6 @@ abstract final class Swap2 {
           col,
           mark,
           ruleset,
-          byAi: true,
           advanceTurn: false,
           onGameOver: reset,
         );
@@ -201,7 +198,6 @@ abstract final class Swap2 {
             c2,
             mark,
             ruleset,
-            byAi: true,
             advanceTurn: false,
             onGameOver: reset,
           );
@@ -224,7 +220,6 @@ abstract final class Swap2 {
       col,
       mark,
       ruleset,
-      byAi: false,
       advanceTurn: false,
       onGameOver: reset,
     );

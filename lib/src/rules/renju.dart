@@ -1,4 +1,4 @@
-import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 
 /// Renju restrictions for black (X): double-three and double-four are fouls.
 /// White (O) has no fouls. Black wins only with an exact five — an overline
@@ -29,22 +29,6 @@ abstract final class Renju {
     });
   }
 
-  static bool isLegalFor(PlayerMark mark, List<List<PlayerMark?>> board, int row, int col) {
-    return (row, col).isLegalOn(board, mark, .renju);
-  }
-
-  /// Contiguous run length of [mark] through (row,col), including that cell.
-  static int lineLength(
-    List<List<PlayerMark?>> board,
-    int row,
-    int col,
-    int dRow,
-    int dCol,
-    PlayerMark mark,
-  ) {
-    return (row, col).runLengthThrough(board, mark, dRow, dCol);
-  }
-
   static bool _hasExactFiveThrough(
     List<List<PlayerMark?>> board,
     int row,
@@ -52,7 +36,7 @@ abstract final class Renju {
     PlayerMark mark,
   ) {
     for (final (dRow, dCol) in BoardData.directions) {
-      if (lineLength(board, row, col, dRow, dCol, mark) == 5) return true;
+      if ((row, col).runLengthThrough(board, mark, dRow, dCol) == 5) return true;
     }
     return false;
   }
@@ -86,7 +70,7 @@ abstract final class Renju {
     int dCol,
     PlayerMark mark,
   ) {
-    if (lineLength(board, row, col, dRow, dCol, mark) != 3) return false;
+    if ((row, col).runLengthThrough(board, mark, dRow, dCol) != 3) return false;
     final a = _endBeyondRun(board, row, col, dRow, dCol, mark);
     final b = _endBeyondRun(board, row, col, -dRow, -dCol, mark);
     return a != null && b != null;
@@ -102,7 +86,7 @@ abstract final class Renju {
     int dCol,
     PlayerMark mark,
   ) {
-    if (lineLength(board, row, col, dRow, dCol, mark) != 4) return false;
+    if ((row, col).runLengthThrough(board, mark, dRow, dCol) != 4) return false;
     final a = _endBeyondRun(board, row, col, dRow, dCol, mark);
     final b = _endBeyondRun(board, row, col, -dRow, -dCol, mark);
     return a != null || b != null;

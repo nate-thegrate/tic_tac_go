@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 void main() {
   test('connect6 winLength is 6', () {
     final data = BoardData(List.generate(15, (_) => List<PlayerMark?>.filled(15, null)));
-    expect(Ruleset.connect6.winLength(data), 6);
+    expect(Ruleset.connect6.winLengthForSize(data.rows, data.cols), 6);
   });
 
   test('connect6 five in a row is not a win', () {

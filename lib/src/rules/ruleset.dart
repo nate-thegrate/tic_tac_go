@@ -105,9 +105,6 @@ enum Ruleset {
     };
   }
 
-  int winLength(BoardData data) => winLengthForSize(data.rows, data.cols);
-
-  /// Win length from board dimensions (for AI / bare grids without [BoardData]).
   int winLengthForSize(int rows, int cols) {
     return this == connect6 ? 6 : math.min(math.min(rows, cols), 5);
   }

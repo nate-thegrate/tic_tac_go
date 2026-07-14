@@ -1,313 +1,18 @@
-import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
-import 'package:tic_tac_go/src/game_log.dart' as game_log;
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/menu.dart';
 import 'package:tic_tac_go/src/rules/connect6.dart';
-import 'package:tic_tac_go/src/rules/renju.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
 
-enum PlayerMark {
-  x,
-  o;
-
-  /// The user's selection for turn order in 1-player games.
-  ///
-  /// - `x`: The user goes first, playing as "X" or black.
-  /// - `o`: The AI goes first; the user plays as "O" or white.
-  /// - `null`: Random player order.
-  static final userSelection = Get.it<PlayerMark?>(null);
-
-  PlayerMark get opponent => switch (this) {
-    x => .o,
-    o => .x,
-  };
-
-  Color get color => switch (this) {
-    x => const Color(0xFFFF6010),
-    o => const Color(0xFF0098A0),
-  };
-
-  Color get winnerGlow => switch (this) {
-    x => const Color(0xFFFFF1D4),
-    o => const Color(0xFFFFFFFF),
-  };
-
-  String get goMode => switch (this) {
-    x => 'Black',
-    o => 'White',
-  };
-
-  @override
-  String toString({bool goMode = false}) => goMode ? this.goMode : name.toUpperCase();
-}
-
-/// Whether [length] counts as a win for [mark] under [ruleset] / [winLength].
-///
-/// Renju black wins only with an exact five (overline does not count).
-bool isWinningRunLength(int length, PlayerMark mark, int winLength, Ruleset ruleset) {
-  if (ruleset == .renju && mark == .x) return length == 5;
-  return length >= winLength;
-}
-
-/// Grid cell helpers shared by UI placement, AI search, and rules (renju).
-extension BoardCell on (int row, int col) {
-  bool inBounds(List<List<PlayerMark?>> board) {
-    final (row, col) = this;
-    return row >= 0 && row < board.length && col >= 0 && col < board.first.length;
-  }
-
-  bool inBoardSize(int rows, int cols) {
-    final (row, col) = this;
-    return row >= 0 && row < rows && col >= 0 && col < cols;
-  }
-
-  /// Mark at this cell, or `null` if out of bounds or empty.
-  PlayerMark? markOn(List<List<PlayerMark?>> board) {
-    final (row, col) = this;
-    return inBounds(board) ? board[row][col] : null;
-  }
-
-  /// Temporarily place [mark], run [body], always clear the cell afterward.
-  T withMark<T>(List<List<PlayerMark?>> board, PlayerMark mark, T Function() body) {
-    final (row, col) = this;
-    board[row][col] = mark;
-    try {
-      return body();
-    } finally {
-      board[row][col] = null;
-    }
-  }
-
-  /// Whether [mark] may be placed here under [ruleset] (occupancy + renju fouls).
-  ///
-  /// [board] must be mutable when checking renju (trial-place + restore).
-  bool isLegalOn(List<List<PlayerMark?>> board, PlayerMark mark, Ruleset ruleset) {
-    final (row, col) = this;
-    if (!inBounds(board) || board[row][col] != null) return false;
-    if (ruleset == .renju && mark == .x) {
-      return Renju.foulIfBlackPlays(board, row, col) == null;
-    }
-    return true;
-  }
-
-  /// Contiguous [mark] count through this cell along [dRow],[dCol] (both ways).
-  ///
-  /// This cell is assumed to hold [mark] (not re-checked).
-  int runLengthThrough(List<List<PlayerMark?>> board, PlayerMark mark, int dRow, int dCol) {
-    final (row, col) = this;
-    var count = 1;
-    for (final sign in const [1, -1]) {
-      for (var step = 1; ; step++) {
-        final r = row + sign * step * dRow;
-        final c = col + sign * step * dCol;
-        if ((r, c).markOn(board) != mark) break;
-        count++;
-      }
-    }
-    return count;
-  }
-
-  /// Whether this cell (already holding [mark]) completes a win under [ruleset].
-  bool formsWin(
-    List<List<PlayerMark?>> board,
-    PlayerMark mark,
-    int winLength, {
-    required Ruleset ruleset,
-  }) {
-    for (final (dRow, dCol) in BoardData.directions) {
-      final length = runLengthThrough(board, mark, dRow, dCol);
-      if (isWinningRunLength(length, mark, winLength, ruleset)) return true;
-    }
-    return false;
-  }
-
-  /// A display segment for a win through this cell, or `null` if none.
-  ///
-  /// Length is [winLength] (or exact five for renju black), from the start of the line.
-  List<(int row, int col)>? winningRunThrough(
-    List<List<PlayerMark?>> board,
-    PlayerMark mark,
-    int winLength, {
-    required Ruleset ruleset,
-  }) {
-    final (row, col) = this;
-    for (final (dRow, dCol) in BoardData.directions) {
-      var startRow = row;
-      var startCol = col;
-      while ((startRow - dRow, startCol - dCol).markOn(board) == mark) {
-        startRow -= dRow;
-        startCol -= dCol;
-      }
-
-      var length = 0;
-      var r = startRow;
-      var c = startCol;
-      while ((r, c).markOn(board) == mark) {
-        length++;
-        r += dRow;
-        c += dCol;
-      }
-      if (!isWinningRunLength(length, mark, winLength, ruleset)) continue;
-
-      final take = ruleset == .renju && mark == .x ? 5 : winLength;
-      return [for (var i = 0; i < take; i++) (startRow + i * dRow, startCol + i * dCol)];
-    }
-    return null;
-  }
-}
-
-/// First winning run on [board], or `null` if nobody has won yet.
-///
-/// Does not encode draws — callers that need a full-board draw check [BoardData.isFull].
-List<(int row, int col)>? winningRunOn(
-  List<List<PlayerMark?>> board,
-  Ruleset ruleset, [
-  int? winLength,
-]) {
-  final needed = winLength ?? ruleset.winLengthForSize(board.length, board.first.length);
-  for (var row = 0; row < board.length; row++) {
-    for (var col = 0; col < board[row].length; col++) {
-      final mark = board[row][col];
-      if (mark == null) continue;
-      final run = (row, col).winningRunThrough(board, mark, needed, ruleset: ruleset);
-      if (run != null) return run;
-    }
-  }
-  return null;
-}
-
-/// Winner on [board], or `null` if none (draws are not distinguished).
-PlayerMark? winnerOn(List<List<PlayerMark?>> board, Ruleset ruleset, [int? winLength]) {
-  final run = winningRunOn(board, ruleset, winLength);
-  if (run == null) return null;
-  final (row, col) = run.first;
-  return board[row][col];
-}
-
-/// Board-wide scans shared by UI ([BoardData]), AI, Connect6, and Swap2.
-extension BoardGrid on List<List<PlayerMark?>> {
-  int countMark(PlayerMark mark) {
-    var count = 0;
-    for (final row in this) {
-      for (final cell in row) {
-        if (cell == mark) count++;
-      }
-    }
-    return count;
-  }
-
-  /// Non-null cells (stones / marks placed).
-  int get stoneCount {
-    var count = 0;
-    for (final row in this) {
-      for (final cell in row) {
-        if (cell != null) count++;
-      }
-    }
-    return count;
-  }
-
-  bool get isBoardEmpty {
-    for (final row in this) {
-      for (final cell in row) {
-        if (cell != null) return false;
-      }
-    }
-    return true;
-  }
-
-  bool get isBoardFull {
-    for (final row in this) {
-      for (final cell in row) {
-        if (cell == null) return false;
-      }
-    }
-    return true;
-  }
-
-  (int row, int col) get centerCell => (length ~/ 2, first.length ~/ 2);
-
-  /// Deep copy of each row (mutable), for AI search / renju trial places.
-  List<List<PlayerMark?>> copyMutable() => [for (final row in this) List<PlayerMark?>.of(row)];
-
-  List<(int row, int col)> get emptyCells => [
-    for (var row = 0; row < length; row++)
-      for (var col = 0; col < this[row].length; col++)
-        if (this[row][col] == null) (row, col),
-  ];
-
-  List<(int row, int col)> get occupiedCells => [
-    for (var row = 0; row < length; row++)
-      for (var col = 0; col < this[row].length; col++)
-        if (this[row][col] != null) (row, col),
-  ];
-}
-
-/// A read-only view of the data in [BoardState].
-extension type BoardData._(List<List<PlayerMark?>> _list) implements List<List<PlayerMark?>> {
-  BoardData(List<List<PlayerMark?>> list)
-    : _list = UnmodifiableListView(list.map(UnmodifiableListView.new));
-
-  int get cols => first.length;
-  int get rows => _list.length;
-
-  /// Unit steps for horizontal, vertical, and both diagonals.
-  static const directions = [
-    (0, 1), // horizontal →
-    (1, 0), // vertical ↓
-    (1, 1), // diagonal ↘
-    (1, -1), // diagonal ↙
-  ];
-
-  /// Cached per board snapshot and [Ruleset] — win length and renju overline
-  /// rules differ, so a result for one ruleset must not be reused for another.
-  static final _winningRunCache = Expando<Map<Ruleset, List<(int row, int col)>>>();
-
-  /// The first winning run found, if any.
-  ///
-  /// Returns `[(-1, -1)]` if the game is a draw.
-  ///
-  /// Under renju: black wins only with an exact five (not overline); white wins
-  /// with five or more.
-  List<(int row, int col)>? winningRun(Ruleset ruleset) {
-    final byRuleset = _winningRunCache[this] ??= {};
-    if (byRuleset[ruleset] case final cached?) {
-      return cached.isEmpty ? null : cached;
-    }
-
-    final run = winningRunOn(_list, ruleset, ruleset.winLength(this));
-    if (run != null) return byRuleset[ruleset] = run;
-    if (isFull) return byRuleset[ruleset] = [(-1, -1)];
-    byRuleset[ruleset] = [];
-    return null;
-  }
-
-  /// If one of the players has won (by having a number of items in a row, straight or diagonally,
-  /// equal to [Ruleset.winLength]), this getter returns that player; returns `null` otherwise.
-  PlayerMark? winner(Ruleset ruleset) => switch (winningRun(ruleset)?.firstOrNull) {
-    (-1, -1) => null,
-    (final row, final col) => _list[row][col],
-    null => null,
-  };
-
-  bool get isFull => isBoardFull;
-
-  /// Whether the game has a winner or the board is completely filled.
-  bool isGameOver(Ruleset ruleset) => winner(ruleset) != null || isFull;
-
-  @protected
-  @redeclare
-  void get length => ();
-}
+export 'package:tic_tac_go/src/player_mark.dart';
 
 extension on int {
   int get clampedBoardSize => math.min(math.max(this, 3), 19);
@@ -445,14 +150,12 @@ class Board extends StatelessWidget {
       final (row, col) = history.removeLast();
       state.update(row, col, null);
       turn.value = turn.value.opponent;
-      game_log.undoLast();
     }
 
     void undoStoneOnly() {
       if (history.isEmpty) return;
       final (row, col) = history.removeLast();
       state.update(row, col, null);
-      game_log.undoLast();
     }
 
     if (Swap2.isPlacing) {
@@ -512,16 +215,7 @@ class Board extends StatelessWidget {
     Connect6.recomputeTurnFromBoard(state.value);
   }
 
-  static void _emitGameOverIfNeeded(Ruleset ruleset) {
-    final data = state.value;
-    game_log.maybeEmitBrutalLoss(
-      winner: data.winner(ruleset),
-      winningRun: data.winningRun(ruleset),
-    );
-  }
-
   static Future<void> runGameEndSequence(Ruleset ruleset) async {
-    _emitGameOverIfNeeded(ruleset);
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     if (!state.value.isGameOver(ruleset)) return;
     // Await so placement lock is held until the overlay is up; jump if already
@@ -541,33 +235,24 @@ class Board extends StatelessWidget {
   }
 
   /// Whether [mark] may be placed at [row],[col] under [ruleset] (renju fouls, occupancy).
+  ///
+  /// BoardData rows are unmodifiable; renju trial-place needs a mutable copy.
   static bool isLegalPlacement(int row, int col, PlayerMark mark, Ruleset ruleset) {
-    final cell = (row, col);
-    if (!cell.inBoardSize(state.rows, state.cols) || state.value[row][col] != null) {
-      return false;
-    }
-    if (ruleset != .renju || mark != .x) return true;
-    // BoardData rows are unmodifiable; renju trial-place needs a mutable copy.
-    return cell.isLegalOn(state.value.copyMutable(), mark, ruleset);
+    final List<List<PlayerMark?>> board = ruleset == .renju && mark == .x
+        ? state.value.copyMutable()
+        : state.value;
+    return (row, col).isLegalOn(board, mark, ruleset);
   }
 
   /// Places [mark] at [row],[col], updates history, and returns whether the game ended.
   ///
   /// Returns `null` if the placement is illegal (e.g. renju foul for black).
-  static bool? commitMark(
-    int row,
-    int col,
-    PlayerMark mark,
-    Ruleset ruleset, {
-    required bool byAi,
-  }) {
+  static bool? commitMark(int row, int col, PlayerMark mark, Ruleset ruleset) {
     if (!isLegalPlacement(row, col, mark, ruleset)) return null;
 
     state.update(row, col, mark);
     currentMark = (row, col);
-    game_log.recordMove(row: row, col: col, mark: mark, byAi: byAi);
     final gameOver = state.value.isGameOver(ruleset);
-    // Undo stack is cleared at game end; [game_log] keeps the full transcript.
     gameOver ? history.clear() : history.add((row, col));
     return gameOver;
   }
@@ -586,11 +271,10 @@ class Board extends StatelessWidget {
     int col,
     PlayerMark mark,
     Ruleset ruleset, {
-    required bool byAi,
     bool advanceTurn = true,
     void Function()? onGameOver,
   }) async {
-    final gameOver = commitMark(row, col, mark, ruleset, byAi: byAi);
+    final gameOver = commitMark(row, col, mark, ruleset);
     if (gameOver == null) return null;
 
     await animatePlacement();
@@ -618,7 +302,7 @@ class Board extends StatelessWidget {
     for (var i = 0; i < stonesNeeded; i++) {
       if (state.value.isGameOver(ruleset)) break;
       final (row, col) = await aiMove(difficulty, ruleset, state.value, aiMark);
-      final result = await placeAndResolve(row, col, aiMark, ruleset, byAi: true);
+      final result = await placeAndResolve(row, col, aiMark, ruleset);
       if (result == null) {
         // Illegal AI move (shouldn't happen if the AI filters renju fouls).
         return;
@@ -643,17 +327,6 @@ class Board extends StatelessWidget {
     }
   }
 
-  static void _startLoggedGame() {
-    game_log.startGame(
-      difficulty: Difficulty.current.value,
-      ruleset: Ruleset.current.value,
-      rows: state.rows,
-      cols: state.cols,
-      human: humanPlayer.value,
-      goMode: goMode.value,
-    );
-  }
-
   /// Resolves sides and starts the game (including an opening AI move when needed).
   static Future<void> beginGame() async {
     GameEnd.opacity.reset();
@@ -662,7 +335,6 @@ class Board extends StatelessWidget {
     currentMark = null;
     Connect6.reset();
     _assignSides();
-    _startLoggedGame();
     Swap2.beginIfNeeded();
 
     if (Swap2.phase.value == .opening3) {
@@ -691,7 +363,6 @@ class Board extends StatelessWidget {
     currentMark = null;
     Swap2.reset();
     Connect6.reset();
-    game_log.clear();
   }
 
   static (int, int)? currentMark;
@@ -1039,7 +710,7 @@ class Board extends StatelessWidget {
               }
 
               final userMark = turn.value;
-              final result = await placeAndResolve(down, across, userMark, ruleset, byAi: false);
+              final result = await placeAndResolve(down, across, userMark, ruleset);
               if (result == null || result.gameOver || !result.turnDone) return;
 
               if (Difficulty.current.value != null) {

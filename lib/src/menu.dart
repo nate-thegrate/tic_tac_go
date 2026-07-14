@@ -215,7 +215,7 @@ class BottomBar extends StatelessWidget {
               // select() closure, so a captured [ruleset] would go stale.
               final (winner, isDraw) = ref.select(
                 Board.state,
-                (data) => (data.winner(Ruleset.current.value), data.isFull),
+                (data) => (data.winner(Ruleset.current.value), data.isBoardFull),
               );
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
