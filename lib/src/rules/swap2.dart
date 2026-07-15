@@ -20,7 +20,17 @@ enum Swap2Phase {
   extra2,
 
   /// First player chooses color only (after the extra two stones).
-  chooseAfter5,
+  chooseAfter5;
+
+  bool get isChoosing => switch (this) {
+    chooseAfter3 || chooseAfter5 => true,
+    _ => false,
+  };
+
+  bool get isPlacing => switch (this) {
+    opening3 || extra2 => true,
+    _ => false,
+  };
 }
 
 /// Swap2 rules: balanced openings, placement phases, and color choice.
@@ -36,8 +46,8 @@ abstract final class Swap2 {
   /// Whether the physical first player is the human (1-player); unused in 2-player.
   static var firstPlayerIsHuman = true;
 
-  static bool get isChoosing => phase.value == .chooseAfter3 || phase.value == .chooseAfter5;
-  static bool get isPlacing => phase.value == .opening3 || phase.value == .extra2;
+  static bool get isChoosing => phase.value.isChoosing;
+  static bool get isPlacing => phase.value.isPlacing;
 
   /// Marks for the current placement phase: opening3 is BWB; extra2 is WB.
   static List<PlayerMark> get currentMarks =>
@@ -113,6 +123,7 @@ abstract final class Swap2 {
       Board.humanPlayer.value = chooserIsHuman ? chooserPlaysAs : chooserPlaysAs.opponent;
     }
 
+    Board.history.clear();
     phase.value = .none;
     optionsVisible.value = true;
     GameEnd.opacity.reset();
@@ -127,6 +138,7 @@ abstract final class Swap2 {
     phase.value = .extra2;
     placedInPhase.value = 0;
     optionsVisible.value = true;
+    Board.history.clear();
     GameEnd.opacity.reset();
     Board.turn.value = nextMark;
 
@@ -187,7 +199,12 @@ abstract final class Swap2 {
         );
         if (result == null) {
           // Illegal plan cell under renju etc. — try a search move.
-          final (r2, c2) = await aiMove(Difficulty.selected.value, ruleset, Board.state.value, mark);
+          final (r2, c2) = await aiMove(
+            Difficulty.selected.value,
+            ruleset,
+            Board.state.value,
+            mark,
+          );
           result = await Board.placeAndResolve(
             r2,
             c2,
@@ -222,8 +239,14 @@ abstract final class Swap2 {
     await _finishPlacementStep();
   }
 
-  /// Undo one stone during an opening/extra placement phase.
+  /// Undo one stone during an opening/extra placement phase, or from a
+  /// color-choice phase back into that placement (2-player).
   static void undoPlacementStone(void Function() undoOnce) {
+    if (isChoosing) {
+      phase.value = phase.value == .chooseAfter3 ? .opening3 : .extra2;
+      optionsVisible.value = true;
+      GameEnd.opacity.reset();
+    }
     undoOnce();
     if (placedInPhase.value > 0) placedInPhase.value--;
     Board.turn.value = nextMark;

@@ -142,21 +142,22 @@ class Board extends StatelessWidget {
     turn.value = .x;
   }
 
-  static bool get canUndo {
-    if (history.isEmpty || Swap2.isChoosing) return false;
+  static final canUndo = Get.compute((ref) {
+    if (ref.watch(history).isEmpty) return false;
 
-    final human = humanPlayer.value;
+    final human = ref.watch(humanPlayer);
     if (human == null) return true;
+    if (ref.watch(Swap2.phase).isChoosing) return false;
 
-    final board = state.value;
+    final board = ref.watch(state);
     for (final (row, col) in history) {
       if (board[row][col] == human) return true;
     }
     return false;
-  }
+  });
 
   static void undo([_]) {
-    if (inputLocked || !canUndo) return;
+    if (inputLocked || !canUndo.value) return;
     BottomBar.undoTransition.forward(from: 0);
 
     void undoOnce() {
@@ -172,7 +173,7 @@ class Board extends StatelessWidget {
       state.update(row, col, null);
     }
 
-    if (Swap2.isPlacing) {
+    if (Swap2.isPlacing || Swap2.isChoosing) {
       Swap2.undoPlacementStone(undoOnce);
       return;
     }
@@ -642,18 +643,18 @@ class Board extends StatelessWidget {
         GestureDetector(
           behavior: .opaque,
           onPanDown: (details) async {
-            if (inputLocked || playerMarkAnimation.isActive) return;
             final ruleset = Ruleset.current.value;
+            if (state.value.isGameOver(ruleset)) {
+              GameEnd.opacity.jumpTo(1);
+              return;
+            }
+
+            if (inputLocked || playerMarkAnimation.isActive) return;
 
             if (Swap2.isChoosing) {
               if (!Swap2.optionsVisible.value) {
                 Swap2.toggleOptionsView();
               }
-              return;
-            }
-
-            if (state.value.isGameOver(ruleset)) {
-              GameEnd.opacity.jumpTo(1);
               return;
             }
 

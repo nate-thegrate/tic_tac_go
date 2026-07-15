@@ -4,7 +4,7 @@ library;
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
-import 'package:get_hooked/get_hooked.dart';
+import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/rules/renju.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
@@ -18,7 +18,7 @@ enum PlayerMark {
   /// - `x`: The user goes first, playing as "X" or black.
   /// - `o`: The AI goes first; the user plays as "O" or white.
   /// - `null`: Random player order.
-  static final userSelection = Get.it<PlayerMark?>(null);
+  static final userSelection = Stored.enumValue<PlayerMark?>(values, null);
 
   PlayerMark get opponent => switch (this) {
     x => .o,

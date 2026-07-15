@@ -86,13 +86,12 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
 
 /// Back chevron / Esc: leave play or go to the previous menu page.
 void goBack([_]) {
-  if (playing.value) {
-    Board.backToMenu();
-  } else {
-    final page = MenuPage.current;
-    if (page.value.index == 0) return;
-    page.value = MenuPage.values[page.value.index - 1];
-  }
+  if (playing.value) return Board.backToMenu();
+
+  final page = MenuPage.current;
+  if (page.value.index == 0) return;
+
+  page.value = MenuPage.values[page.value.index - 1];
   BottomBar.backTransition.reverse(from: 1);
 }
 
@@ -133,7 +132,7 @@ class BottomBar extends StatelessWidget {
     );
   }
 
-  static final undoTransition = Get.vsync();
+  static final undoTransition = Get.vsync(duration: const Duration(milliseconds: 400));
   static final backTransition = Get.vsync();
 
   @override
@@ -147,29 +146,31 @@ class BottomBar extends StatelessWidget {
           onPanDown: goBack,
           child: SizedBox.square(
             dimension: height,
-            child: RefPaint((ref) {
-              final t = Curves.easeInSine.transform(ref.watch(backTransition));
-              final disappearing = ref.select(MenuPage.current, (page) => page == .players);
-              final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-              const strokeWidth = 5.0;
-              const xPad = 16.0;
-              const yPad = 12.0;
+            child: RepaintBoundary(
+              child: RefPaint((ref) {
+                final t = Curves.easeInSine.transform(ref.watch(backTransition));
+                final disappearing = ref.select(MenuPage.current, (page) => page == .players);
+                final PaintRef(:canvas, size: Size(:width, :height)) = ref;
+                const strokeWidth = 5.0;
+                const xPad = 16.0;
+                const yPad = 12.0;
 
-              final strokePaint = Paint()
-                ..style = .stroke
-                ..strokeWidth = strokeWidth
-                ..strokeCap = .round
-                ..color = Black(disappearing ? t : 1);
-              canvas
-                ..translate(-t * 10, 0)
-                ..drawPath(
-                  Path()
-                    ..moveTo(width - xPad, yPad)
-                    ..lineTo(xPad, height / 2)
-                    ..lineTo(width - xPad, height - yPad),
-                  strokePaint,
-                );
-            }),
+                final strokePaint = Paint()
+                  ..style = .stroke
+                  ..strokeWidth = strokeWidth
+                  ..strokeCap = .round
+                  ..color = Black(disappearing ? t : 1);
+                canvas
+                  ..translate(-t * 10, 0)
+                  ..drawPath(
+                    Path()
+                      ..moveTo(width - xPad, yPad)
+                      ..lineTo(xPad, height / 2)
+                      ..lineTo(width - xPad, height - yPad),
+                    strokePaint,
+                  );
+              }),
+            ),
           ),
         ),
         GestureDetector(
@@ -177,57 +178,67 @@ class BottomBar extends StatelessWidget {
           onPanDown: Board.undo,
           child: SizedBox.square(
             dimension: height,
-            child: RefPaint((ref) {
-              final PaintRef(:canvas, :size) = ref;
-              const strokeWidth = 5.0;
-              const arrowWidth = 12.0;
+            child: RepaintBoundary(
+              child: RefPaint((ref) {
+                final PaintRef(:canvas, :size) = ref;
+                const strokeWidth = 5.0;
+                const arrowWidth = 12.0;
 
-              final t = ref.watch(undoTransition..duration = const Duration(milliseconds: 400));
-              const shrinkTime = 1 / 3;
-              final double shrinkProgress = Curves.easeInSine.transform(
-                math.min(t / shrinkTime, 1),
-              );
-              final double growProgress = Curves.ease.transform(
-                math.max((t - shrinkTime) / (1 - shrinkTime), 0),
-              );
+                final t = ref.watch(undoTransition);
+                const shrinkTime = 1 / 3;
+                final double shrinkProgress = Curves.easeInSine.transform(
+                  math.min(t / shrinkTime, 1),
+                );
+                double growProgress = Curves.ease.transform(
+                  math.max((t - shrinkTime) / (1 - shrinkTime), 0),
+                );
 
-              final Offset(:dx, :dy) = size.center(Offset.zero);
-              final angle = (5 / 12 - growProgress) * 2 * math.pi;
-              final transform = Matrix4.identity()
-                ..translateByDouble(dx, dy, 0, 1)
-                ..rotateZ(angle)
-                ..translateByDouble(-dx, -dy, 0, 1);
+                final canUndo = ref.watch(Board.canUndo);
+                final playingAlpha = math.max(ref.watch(playingTransition) * 2 - 1, 0.0);
+                final paint = Paint()
+                  ..color = Black(
+                    canUndo
+                        ? playingAlpha
+                        : undoTransition.isActive
+                        ? 1 - growProgress
+                        : 0.0,
+                  );
+                if (!canUndo) growProgress = 0;
+                final Offset(:dx, :dy) = size.center(Offset.zero);
+                final angle = (5 / 12 - growProgress) * 2 * math.pi;
+                final transform = Matrix4.identity()
+                  ..translateByDouble(dx, dy, 0, 1)
+                  ..rotateZ(angle)
+                  ..translateByDouble(-dx, -dy, 0, 1);
 
-              final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
-              final playingAlpha = math.max(ref.watch(playingTransition) * 2 - 1, 0.0);
-              // Recompute when history changes; [Board.canUndo] also depends on
-              // human side / board marks (AI-only openings are not undoable).
-              final undoAvailable = ref.select(Board.history, (_) => Board.canUndo);
-              final paint = Paint()..color = Black(undoAvailable ? playingAlpha : 0.0);
+                final arcRect = (Offset.zero & size).deflate(strokeWidth + arrowWidth / 2);
+                // [Board.canUndo] also depends on Swap2 phase and human side.
+                ref.watch(Swap2.phase);
 
-              canvas
-                ..save()
-                ..transform(transform.storage)
-                ..drawPath(
-                  Path()
-                    ..moveTo(size.width / 2, size.height - arrowWidth / 2)
-                    ..relativeLineTo(0, -arrowWidth)
-                    ..relativeLineTo(arrowWidth * root3over2, arrowWidth / 2)
-                    ..close(),
-                  paint,
-                )
-                ..drawArc(
-                  arcRect,
-                  -math.pi * 3 / 2 * (shrinkProgress - growProgress),
-                  -math.pi * 3 / 2 * (1 - shrinkProgress + growProgress),
-                  false,
-                  paint
-                    ..style = .stroke
-                    ..strokeWidth = strokeWidth
-                    ..strokeCap = .round,
-                )
-                ..restore();
-            }),
+                canvas
+                  ..save()
+                  ..transform(transform.storage)
+                  ..drawPath(
+                    Path()
+                      ..moveTo(size.width / 2, size.height - arrowWidth / 2)
+                      ..relativeLineTo(0, -arrowWidth)
+                      ..relativeLineTo(arrowWidth * root3over2, arrowWidth / 2)
+                      ..close(),
+                    paint,
+                  )
+                  ..drawArc(
+                    arcRect,
+                    -math.pi * 3 / 2 * (shrinkProgress - growProgress),
+                    -math.pi * 3 / 2 * (1 - shrinkProgress + growProgress),
+                    false,
+                    paint
+                      ..style = .stroke
+                      ..strokeWidth = strokeWidth
+                      ..strokeCap = .round,
+                  )
+                  ..restore();
+              }),
+            ),
           ),
         ),
         Expanded(
@@ -246,7 +257,7 @@ class BottomBar extends StatelessWidget {
               final menuPage = ref.watch(MenuPage.current);
               final t = ref.watch(playingTransition);
               final isGoMode = ref.watch(goMode);
-              final playerText = (winner ?? player).toString(goMode: isGoMode);
+              final playerText = (winner ?? player).toString(goMode: isGoMode).toUpperCase();
               final human = ref.watch(Board.humanPlayer);
               final usersTurn = human != null && player == human;
               final swap2Phase = ref.watch(Swap2.phase);
@@ -275,24 +286,27 @@ class BottomBar extends StatelessWidget {
               } else if (swap2Phase == .opening3 || swap2Phase == .extra2) {
                 final total = swap2Phase == .extra2 ? 2 : 3;
                 final done = ref.watch(Swap2.placedInPhase);
-                final mark = player.toString(goMode: isGoMode);
-                textSpan = TextSpan(text: 'PLACE $mark · ${done + 1}/$total');
+                textSpan = TextSpan(text: 'BEGIN: ${done + 1}/$total');
               } else if (ruleset == .connect6 && winner == null && !isDraw) {
                 final placed = ref.watch(Connect6.stonesThisTurn);
                 final total = Connect6.stonesNeeded(player, ref.watch(Board.state));
-                final status = usersTurn
-                    ? 'YOUR MOVE'
-                    : "${player.toString(goMode: isGoMode)}'s move";
-                textSpan = TextSpan(text: total > 1 ? '$status · ${placed + 1}/$total' : status);
+
+                textSpan = TextSpan(
+                  text: total > 1
+                      ? '$playerText: ${placed + 1}/$total'
+                      : usersTurn
+                      ? 'YOUR MOVE'
+                      : "$playerText'S MOVE",
+                );
               } else {
                 textSpan = TextSpan(
                   text: winner != null
-                      ? '$playerText wins!'
+                      ? '$playerText WINS!'
                       : isDraw
                       ? 'DRAW!'
                       : usersTurn
                       ? 'YOUR MOVE'
-                      : " $playerText's move ",
+                      : "$playerText'S MOVE",
                 );
               }
 
@@ -535,7 +549,7 @@ class Menu extends RefWidget {
       mainAxisSize: .min,
       crossAxisAlignment: .start,
       children: [
-        SizedBox(width: 185, child: Text(title, style: const TextStyle(fontSize: 30))),
+        SizedBox(width: 185, child: Text(title, style: const TextStyle(fontSize: 28))),
         const SizedBox(height: 6),
         for (final value in values)
           GestureDetector(
@@ -574,38 +588,36 @@ class Menu extends RefWidget {
       children: [
         if (!isTwoPlayer)
           Expanded(
-            child: Align(
-              alignment: .xy(0, -0.5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Center(
-                      child: RefBuilder((context) {
-                        final selection = ref.watch(PlayerMark.userSelection);
-                        final isGoMode = ref.watch(goMode);
-                        return _radioGroup(
-                          title: 'PLAY AS',
-                          values: const [...PlayerMark.values, null],
-                          labelOf: (option) => option?.toString(goMode: isGoMode) ?? 'Random',
-                          isSelected: (option) => selection == option,
-                          onSelect: (option) => PlayerMark.userSelection.value = option,
-                        );
-                      }),
+            child: Row(
+              children: [
+                SizedBox(width: 16),
+                Expanded(
+                  child: Center(
+                    child: RefBuilder((context) {
+                      final selection = ref.watch(PlayerMark.userSelection);
+                      final isGoMode = ref.watch(goMode);
+                      return _radioGroup(
+                        title: 'PLAY AS',
+                        values: const [...PlayerMark.values, null],
+                        labelOf: (option) => option?.toString(goMode: isGoMode) ?? 'Random',
+                        isSelected: (option) => selection == option,
+                        onSelect: (option) => PlayerMark.userSelection.value = option,
+                      );
+                    }),
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: _radioGroup(
+                      title: 'DIFFICULTY',
+                      values: Difficulty.values,
+                      labelOf: (level) => level.toString(),
+                      isSelected: (level) => difficulty == level,
+                      onSelect: (level) => Difficulty.selected.value = level,
                     ),
                   ),
-                  Expanded(
-                    child: Center(
-                      child: _radioGroup(
-                        title: 'DIFFICULTY',
-                        values: Difficulty.values,
-                        labelOf: (level) => level.toString(),
-                        isSelected: (level) => difficulty == level,
-                        onSelect: (level) => Difficulty.selected.value = level,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           )
         else

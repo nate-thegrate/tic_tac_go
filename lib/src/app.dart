@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/menu.dart';
@@ -77,11 +78,16 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: DefaultTextStyle(
-          style: TextStyle(fontFamily: Font.permanentMarker, fontSize: 22, color: Black()),
+    return const Directionality(
+      textDirection: .ltr,
+      child: DefaultTextStyle(
+        style: TextStyle(fontFamily: Font.permanentMarker, fontSize: 22, color: Black()),
+        child: AnnotatedRegion(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: .light,
+            statusBarBrightness: .dark,
+          ),
           child: Stack(
             fit: .expand,
             children: [
@@ -197,15 +203,13 @@ class Backdrop extends StatelessWidget {
     Widget layoutBuilder(BuildContext context, BoxConstraints constraints) {
       final maxSize = constraints.biggest;
       final pad = maxSize.shortestSide / 32;
-      var data = MediaQuery.of(context);
-      var padding = data.padding;
-      padding = EdgeInsets.fromLTRB(
-        math.max(padding.left, pad),
-        math.max(padding.top, pad),
-        math.max(padding.right, pad),
-        math.max(padding.bottom, pad),
+      final queryPad = MediaQuery.paddingOf(context);
+      final padding = EdgeInsets.fromLTRB(
+        math.max(pad, queryPad.left),
+        math.max(pad, queryPad.top),
+        math.max(pad, queryPad.right),
+        math.max(pad, queryPad.bottom),
       );
-      data = data.copyWith(padding: .zero);
 
       const minHeight = 650.0;
       final availableWidth = maxSize.width - padding.left - padding.right;
@@ -213,8 +217,6 @@ class Backdrop extends StatelessWidget {
       final wideEnough = availableWidth >= BottomBar.minWidth;
       final tallEnough = availableHeight >= minHeight;
 
-      // When both dimensions are short, pick the tighter scale so size stays
-      // continuous with the single-constraint fitWidth/fitHeight cases.
       final widthIsTighter = availableWidth * minHeight <= availableHeight * BottomBar.minWidth;
 
       final Widget widget;
@@ -247,10 +249,7 @@ class Backdrop extends StatelessWidget {
           ),
         );
       }
-      return Padding(
-        padding: padding,
-        child: MediaQuery(data: data, child: widget),
-      );
+      return Padding(padding: padding, child: widget);
     }
 
     return GetScope(

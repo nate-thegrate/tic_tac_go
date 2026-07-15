@@ -78,12 +78,19 @@ void main() {
       expect(Connect6.stonesNeeded(.x, empty), 1);
       expect(Connect6.stonesNeeded(.o, empty), 2);
 
+      // After black's opening stone is committed (e.g. mid-animation, before
+      // notePlacement): still the opening turn — white has not played yet.
       final afterBlack = emptyBoard(15);
       afterBlack[7][7] = .x;
-      // Mid-turn after black's opening: stonesThisTurn tracks progress.
-      // Before any notePlacement, count X=1 means black already finished opening.
       Connect6.stonesThisTurn.value = 0;
-      expect(Connect6.stonesNeeded(.x, BoardData(afterBlack)), 2);
+      expect(Connect6.stonesNeeded(.x, BoardData(afterBlack)), 1);
+
+      // After white has stones, black places two per turn.
+      final afterWhite = emptyBoard(15);
+      afterWhite[7][7] = .x;
+      afterWhite[0][0] = .o;
+      afterWhite[0][1] = .o;
+      expect(Connect6.stonesNeeded(.x, BoardData(afterWhite)), 2);
     });
 
     test('notePlacement completes black opening after one stone', () {

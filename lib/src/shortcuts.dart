@@ -24,7 +24,7 @@ bool handleKeyEvent(KeyEvent event) {
     // Undo: Ctrl/Cmd+Z or U while playing
     case .keyZ when isPlaying && (keyboard.isControlPressed || keyboard.isMetaPressed):
     case .keyU when isPlaying:
-      if (!Board.canUndo) return false;
+      if (!Board.canUndo.value) return false;
       Board.undo();
 
     // Esc: back

@@ -135,6 +135,44 @@ void main() {
       expect(Swap2.placedInPhase.value, 1);
       expect(Board.turn.value, Swap2.nextMark);
     });
+
+    test('undoPlacementStone from chooseAfter3 returns to opening3', () {
+      Swap2.phase.value = .chooseAfter3;
+      Swap2.placedInPhase.value = 3;
+      GameEnd.opacity.jumpTo(1);
+      Swap2.undoPlacementStone(() {});
+      expect(Swap2.phase.value, Swap2Phase.opening3);
+      expect(Swap2.placedInPhase.value, 2);
+      expect(GameEnd.opacity.value, 0);
+      expect(Board.turn.value, Swap2.nextMark);
+    });
+
+    test('undoPlacementStone from chooseAfter5 returns to extra2', () {
+      Swap2.phase.value = .chooseAfter5;
+      Swap2.placedInPhase.value = 2;
+      GameEnd.opacity.jumpTo(1);
+      Swap2.undoPlacementStone(() {});
+      expect(Swap2.phase.value, Swap2Phase.extra2);
+      expect(Swap2.placedInPhase.value, 1);
+      expect(GameEnd.opacity.value, 0);
+      expect(Board.turn.value, Swap2.nextMark);
+    });
+
+    test('canUndo during color choice only in 2-player', () {
+      Board.history.add((0, 0));
+      Swap2.phase.value = .chooseAfter3;
+      Board.humanPlayer.value = null;
+      expect(Board.canUndo, isTrue);
+
+      Board.humanPlayer.value = .x;
+      expect(Board.canUndo, isFalse);
+
+      Swap2.phase.value = .chooseAfter5;
+      Board.humanPlayer.value = null;
+      expect(Board.canUndo, isTrue);
+      Board.humanPlayer.value = .o;
+      expect(Board.canUndo, isFalse);
+    });
   });
 
   group('opening plans', () {

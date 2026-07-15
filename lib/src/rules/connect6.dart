@@ -13,14 +13,16 @@ abstract final class Connect6 {
     stonesThisTurn.value = 0;
   }
 
-  /// How many stones [mark] must place to finish the current turn, given [board]
-  /// *before* the next placement (and [stonesThisTurn] progress).
+  /// How many stones [mark] must place to finish the current turn on [board].
+  ///
+  /// Safe with either the pre-placement board or the board after commit (including
+  /// the post-commit / pre-[notePlacement] animation window): black still needs
+  /// only one stone until white has played.
   static int stonesNeeded(PlayerMark mark, BoardData board) {
     if (!isActive) return 1;
     if (mark == .o) return 2;
-    // Black places a single stone only on the game's first turn.
-    final xBeforeThisTurn = board.countMark(.x) - stonesThisTurn.value;
-    return xBeforeThisTurn <= 0 ? 1 : 2;
+    // Black places a single stone only on the opening turn (while white has none).
+    return board.countMark(.o) == 0 ? 1 : 2;
   }
 
   /// After a successful placement by [mark], advance turn state.
@@ -29,8 +31,6 @@ abstract final class Connect6 {
     if (!isActive) return true;
     stonesThisTurn.value++;
     final required = stonesNeeded(mark, boardAfterPlace);
-    // stonesRequired uses stonesThisTurn; after increment, xBeforeThisTurn for black
-    // first turn: countX=1, stonesThisTurn=1 → xBefore=0 → required=1. Good.
     if (stonesThisTurn.value >= required) {
       stonesThisTurn.value = 0;
       return true;

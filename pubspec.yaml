@@ -27,8 +27,6 @@ dependency_overrides:
     path: ../get_hooked/packages/get_hooked_storage
 
 flutter:
-  uses-material-design: true
-
   assets:
     - assets/
 
