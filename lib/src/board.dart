@@ -302,7 +302,7 @@ class Board extends StatelessWidget {
   }
 
   /// Resolves sides and starts the game (including an opening AI move when needed).
-  static Future<void> beginGame() async {
+  static Future<void> startNewGame() async {
     GameEnd.opacity.reset();
     state.clear();
     history.clear();
@@ -748,7 +748,7 @@ class GameEnd extends RefWidget {
       ];
     } else if (gameOver) {
       options = const [
-        _BoardOverlayText(label: 'Play again', onSelect: Board.beginGame),
+        _BoardOverlayText(label: 'Play again', onSelect: Board.startNewGame),
         _BoardOverlayText(label: 'Back to menu', onSelect: backToMenu),
       ];
     } else {

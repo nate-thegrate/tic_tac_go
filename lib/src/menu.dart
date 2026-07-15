@@ -111,7 +111,7 @@ void primaryAction([_]) {
       MenuPage.current.value = .rules;
     case .rules:
       playing.value = true;
-      Board.beginGame();
+      Board.startNewGame();
   }
 }
 

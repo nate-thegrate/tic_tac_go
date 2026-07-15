@@ -8,7 +8,7 @@ import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/menu.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
-import 'package:tic_tac_go/src/shortcuts.dart';
+import 'package:tic_tac_go/src/keybinds.dart';
 
 KeyDownEvent keyDown(LogicalKeyboardKey key) {
   return KeyDownEvent(
