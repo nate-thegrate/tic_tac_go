@@ -31,6 +31,7 @@ void main() {
     // Jump transitions so toggler status updates without pumping frames.
     playingTransition.value = 0;
     goModeTransition.value = 0;
+    tutorialDone.value = true;
     MenuPage.current.value = MenuPage.players;
     Board.state
       ..rows = 3

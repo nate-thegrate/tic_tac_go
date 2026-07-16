@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
@@ -54,8 +55,22 @@ Future<void> loadShaders() async {
 
   final (paper, marker) = await paperMarkerFutures.wait;
   Backdrop.boardPaperShader = paper.fragmentShader();
-  Backdrop.backdropPaperShader = paper.fragmentShader();
   Board.markerProgram = marker;
+}
+
+Future<void> configureSystemUi() async {
+  WidgetsBinding.instance.addObserver(SystemBackObserver());
+  if (defaultTargetPlatform != .android) return;
+  await SystemChrome.setEnabledSystemUIMode(.immersiveSticky);
+}
+
+class SystemBackObserver with WidgetsBindingObserver {
+  @override
+  Future<bool> didPopRoute() async {
+    if (!playing.value && MenuPage.current.value == .players) return false;
+    goBack();
+    return true;
+  }
 }
 
 class App extends StatelessWidget {
@@ -95,6 +110,9 @@ class App extends StatelessWidget {
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: .light,
             statusBarBrightness: .dark,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: .light,
+            systemNavigationBarContrastEnforced: false,
           ),
           child: Stack(
             fit: .expand,
@@ -117,26 +135,6 @@ class Backdrop extends StatelessWidget {
   static late final ui.ImageShader woodShader;
   static const woodSize = Size(4824.0, 3216.0);
   static late final ui.FragmentShader boardPaperShader;
-  static late final ui.FragmentShader backdropPaperShader;
-
-  static void _configureShader(
-    ui.FragmentShader shader,
-    Size size,
-    Color baseColor, {
-    required double grain,
-    required double scale,
-  }) {
-    shader
-      ..setFloat(0, size.width)
-      ..setFloat(1, size.height)
-      ..setFloat(2, baseColor.r)
-      ..setFloat(3, baseColor.g)
-      ..setFloat(4, baseColor.b)
-      ..setFloat(5, baseColor.a)
-      ..setFloat(6, grain)
-      ..setFloat(7, scale)
-      ..setFloat(8, devicePixelRatio);
-  }
 
   static void paint(PaintRef ref) {
     final PaintRef(:canvas, :size) = ref;
@@ -156,7 +154,17 @@ class Backdrop extends StatelessWidget {
         ..drawPaint(Paint()..color = Color(0xC0f5c782))
         ..restore();
     } else {
-      _configureShader(boardPaperShader, size, const Color(0xFFFAF8F3), grain: 0.06, scale: 0.6);
+      const color = Color(0xFFFAF8F3);
+      boardPaperShader
+        ..setFloat(0, size.width)
+        ..setFloat(1, size.height)
+        ..setFloat(2, color.r)
+        ..setFloat(3, color.g)
+        ..setFloat(4, color.b)
+        ..setFloat(5, color.a)
+        ..setFloat(6, 0.06)
+        ..setFloat(7, 0.6)
+        ..setFloat(8, devicePixelRatio);
       canvas.drawRect(Offset.zero & size, Paint()..shader = boardPaperShader);
     }
   }
@@ -165,8 +173,7 @@ class Backdrop extends StatelessWidget {
     final PaintRef(:canvas, :size) = ref;
     final Size(:width, :height) = size;
     if (ref.watch(goMode)) {
-      _configureShader(backdropPaperShader, size, const Color(0xFF103018), grain: 0.04, scale: 0.6);
-      canvas.drawRect(Offset.zero & size, Paint()..shader = backdropPaperShader);
+      canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFF103018));
     } else {
       final Size(width: imageWidth, height: imageHeight) = woodSize;
       final fittedScale = math.max(width / imageWidth, height / imageHeight);
@@ -199,12 +206,10 @@ class Backdrop extends StatelessWidget {
     final content = DecoratedBox(
       key: GlobalObjectKey(context),
       decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)]),
-      child: const RepaintBoundary(
-        child: RefPaint(
-          paint,
-          expanded: false,
-          child: RefClip.path(_clipPath, child: MainContent()),
-        ),
+      child: const RefPaint(
+        paint,
+        expanded: false,
+        child: RefClip.path(_clipPath, child: MainContent()),
       ),
     );
 

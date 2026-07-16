@@ -344,7 +344,7 @@ class Board extends StatelessWidget {
   static final playerMarkAnimation = Get.vsync();
 
   static late final ui.FragmentProgram markerProgram;
-  static final _markerShaders = <(Size, Color, double grain), ui.FragmentShader>{};
+  static final _markerShaders = <Color, ui.FragmentShader>{};
 
   static final int _gameSeed = rng.nextInt(0x1000);
   static double _rng(int seed) {
@@ -353,43 +353,26 @@ class Board extends StatelessWidget {
     return x / 0x7fffffff;
   }
 
-  static void drawMarker(
-    void Function(Paint paint) draw, {
-    required Size size,
-    PlayerMark? player,
-    required double strokeWidth,
-  }) {
+  static Paint markerPaint({required Size size, PlayerMark? player, required double strokeWidth}) {
     final color = player?.color ?? Colors.black;
+    final Size(:width, :height) = size;
+    final shader = _markerShaders[color] ??= markerProgram.fragmentShader()
+      ..setFloat(0, width)
+      ..setFloat(1, height)
+      ..setFloat(2, color.r)
+      ..setFloat(3, color.g)
+      ..setFloat(4, color.b)
+      ..setFloat(5, color.a)
+      ..setFloat(6, devicePixelRatio)
+      ..setFloat(7, 1);
 
-    Paint paint({required double grain, double opacity = 1}) {
-      final Size(:width, :height) = size;
-      final ink = opacity >= 1 ? color : color.withValues(alpha: color.a * opacity);
-      final shader = _markerShaders[(size, ink, grain)] ??= markerProgram.fragmentShader()
-        ..setFloat(0, width)
-        ..setFloat(1, height)
-        ..setFloat(2, ink.r)
-        ..setFloat(3, ink.g)
-        ..setFloat(4, ink.b)
-        ..setFloat(5, ink.a)
-        ..setFloat(6, devicePixelRatio)
-        ..setFloat(7, grain);
-
-      return Paint()
-        ..style = .stroke
-        ..strokeWidth = strokeWidth
-        ..strokeCap = .round
-        ..strokeJoin = .round
-        ..blendMode = .multiply
-        ..shader = shader;
-    }
-
-    final double opacity = switch (player) {
-      .x => 1,
-      .o => 0.2,
-      null => 0.4,
-    };
-    draw(paint(grain: 2));
-    draw(paint(grain: 0, opacity: opacity));
+    return Paint()
+      ..style = .stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = .round
+      ..strokeJoin = .round
+      ..blendMode = .multiply
+      ..shader = shader;
   }
 
   static void paint(PaintRef ref) {
@@ -544,41 +527,40 @@ class Board extends StatelessWidget {
     } else {
       final markWidth = minCell * 0.15;
       final gridInset = minCell * 0.05;
+      final gridPaint = markerPaint(size: size, strokeWidth: minCell * 0.075);
 
-      drawMarker(size: size, strokeWidth: minCell * 0.075, (paint) {
-        void drawWobblyLine(Offset start, Offset end, {required int seed}) {
-          if (minCell < 60) {
-            // Don't make it wobbly if the grid is small
-            canvas.drawLine(start, end, paint);
-            return;
-          }
-
-          final delta = end - start;
-          final direction = delta / delta.distance;
-          final normal = Offset(-direction.dy, direction.dx);
-
-          final path = Path()..moveTo(start.dx, start.dy);
-          const count = 14;
-          for (var i = 1; i <= count; i++) {
-            final t = i / count;
-            final point = Offset.lerp(start, end, t)!;
-            final falloff = math.sin(t * math.pi);
-            final jitter = i == count ? 0.0 : (_rng(seed + i) - 0.5) * 0.015 * minCell * falloff;
-            final Offset(:dx, :dy) = point + normal * jitter;
-            path.lineTo(dx, dy);
-          }
-          canvas.drawPath(path, paint);
+      void drawWobblyLine(Offset start, Offset end, {required int seed}) {
+        if (minCell < 60) {
+          // Don't make it wobbly if the grid is small
+          canvas.drawLine(start, end, gridPaint);
+          return;
         }
 
-        for (var i = 1; i < cols; i++) {
-          final x = width * i / cols;
-          drawWobblyLine(Offset(x, gridInset), Offset(x, height - gridInset), seed: i);
+        final delta = end - start;
+        final direction = delta / delta.distance;
+        final normal = Offset(-direction.dy, direction.dx);
+
+        final path = Path()..moveTo(start.dx, start.dy);
+        const count = 14;
+        for (var i = 1; i <= count; i++) {
+          final t = i / count;
+          final point = Offset.lerp(start, end, t)!;
+          final falloff = math.sin(t * math.pi);
+          final jitter = i == count ? 0.0 : (_rng(seed + i) - 0.5) * 0.015 * minCell * falloff;
+          final Offset(:dx, :dy) = point + normal * jitter;
+          path.lineTo(dx, dy);
         }
-        for (var i = 1; i < rows; i++) {
-          final y = height * i / rows;
-          drawWobblyLine(Offset(gridInset, y), Offset(width - gridInset, y), seed: i + 20);
-        }
-      });
+        canvas.drawPath(path, gridPaint);
+      }
+
+      for (var i = 1; i < cols; i++) {
+        final x = width * i / cols;
+        drawWobblyLine(Offset(x, gridInset), Offset(x, height - gridInset), seed: i);
+      }
+      for (var i = 1; i < rows; i++) {
+        final y = height * i / rows;
+        drawWobblyLine(Offset(gridInset, y), Offset(width - gridInset, y), seed: i + 20);
+      }
 
       final inset = minCell * 0.25;
 
@@ -597,25 +579,19 @@ class Board extends StatelessWidget {
           final progress = currentMark == (row, col) ? t : 1.0;
           if (progress <= 0) continue;
 
-          drawMarker(
-            (paint) {
-              switch (mark) {
-                case .x:
-                  final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
-                  final p1 = math.min(progress * 2, 1.0);
-                  canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, p1)!, paint);
-                  if (progress > 0.5) {
-                    final p2 = (progress - 0.5) * 2;
-                    canvas.drawLine(topRight, Offset.lerp(topRight, bottomLeft, p2)!, paint);
-                  }
-                case .o:
-                  canvas.drawArc(rect, -math.pi / 2, progress * math.pi * 2, false, paint);
+          final paint = markerPaint(size: size, player: mark, strokeWidth: markWidth);
+          switch (mark) {
+            case .x:
+              final Rect(:topLeft, :topRight, :bottomLeft, :bottomRight) = rect;
+              final p1 = math.min(progress * 2, 1.0);
+              canvas.drawLine(topLeft, Offset.lerp(topLeft, bottomRight, p1)!, paint);
+              if (progress > 0.5) {
+                final p2 = (progress - 0.5) * 2;
+                canvas.drawLine(topRight, Offset.lerp(topRight, bottomLeft, p2)!, paint);
               }
-            },
-            size: size,
-            player: mark,
-            strokeWidth: markWidth,
-          );
+            case .o:
+              canvas.drawArc(rect, -math.pi / 2, progress * math.pi * 2, false, paint);
+          }
         }
       }
 
@@ -630,84 +606,103 @@ class Board extends StatelessWidget {
         start -= pad;
         end += pad;
 
-        drawMarker(size: size, strokeWidth: minCell * 0.05, (paint) {
-          canvas.drawLine(start, Offset.lerp(start, end, t)!, paint);
-        });
+        canvas.drawLine(
+          start,
+          Offset.lerp(start, end, t)!,
+          markerPaint(size: size, strokeWidth: minCell * 0.05),
+        );
       }
     }
   }
 
+  static void _handleTap(Offset position, Size size) async {
+    if (!tutorialDone.value && GameEnd.opacity.isCompleted) {
+      GameEnd.opacity.value = 0;
+      return;
+    }
+    final ruleset = Ruleset.current.value;
+    if (state.value.isGameOver(ruleset)) {
+      GameEnd.opacity.value = 1;
+      tutorialDone.value = true;
+      return;
+    }
+
+    if (inputLocked || playerMarkAnimation.isActive) return;
+
+    if (Swap2.isChoosing) {
+      if (!Swap2.optionsVisible.value) {
+        Swap2.toggleOptionsView();
+      }
+      return;
+    }
+
+    final human = humanPlayer.value;
+    final isUsersTurn = human == null || turn.value == human;
+    if (Swap2.isPlacing) {
+      if (!Swap2.humanPlacesCurrentPhase) return;
+    } else if (!isUsersTurn) {
+      return;
+    }
+
+    final Offset(:dx, :dy) = position;
+    final Size(:width, :height) = size;
+    final BoardState(:cols, :rows) = state;
+
+    final down = (dy / height * rows).floor();
+    final across = (dx / width * cols).floor();
+    if (down < 0 || down >= rows || across < 0 || across >= cols) return;
+    if (state.value[down][across] != null) return;
+
+    inputLocked = true;
+    try {
+      if (Swap2.isPlacing) {
+        await Swap2.placeHumanMark(down, across);
+        return;
+      }
+
+      final userMark = turn.value;
+      final result = await placeAndResolve(down, across, userMark, ruleset);
+      if (result == null || result.gameOver || !result.turnDone) return;
+
+      if (Difficulty.current.value != null) {
+        await _playAiMove(ruleset);
+      }
+    } finally {
+      inputLocked = false;
+    }
+  }
+
+  static double _opacity(Ref ref) {
+    final swap2Choice =
+        ref.watch(Swap2.phase) == .chooseAfter3 || ref.watch(Swap2.phase) == .chooseAfter5;
+    final hideOverlay = swap2Choice && !ref.watch(Swap2.optionsVisible);
+    if (hideOverlay) return 1.0;
+    return 1 - ref.watch(GameEnd.opacity) / 2;
+  }
+
+  static double _boardAspectRatio(Ref ref) =>
+      ref.select(Board.state, (data) => data.cols / data.rows);
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        TapDetector(
-          (position, size) async {
-            if (!tutorialDone.value && GameEnd.opacity.isCompleted) {
-              GameEnd.opacity.value = 0;
-              return;
-            }
-            final ruleset = Ruleset.current.value;
-            if (state.value.isGameOver(ruleset)) {
-              GameEnd.opacity.value = 1;
-              tutorialDone.value = true;
-              return;
-            }
-
-            if (inputLocked || playerMarkAnimation.isActive) return;
-
-            if (Swap2.isChoosing) {
-              if (!Swap2.optionsVisible.value) {
-                Swap2.toggleOptionsView();
-              }
-              return;
-            }
-
-            final human = humanPlayer.value;
-            final isUsersTurn = human == null || turn.value == human;
-            if (Swap2.isPlacing) {
-              if (!Swap2.humanPlacesCurrentPhase) return;
-            } else if (!isUsersTurn) {
-              return;
-            }
-
-            final Offset(:dx, :dy) = position;
-            final Size(:width, :height) = size;
-            final BoardState(:cols, :rows) = state;
-
-            final down = (dy / height * rows).floor();
-            final across = (dx / width * cols).floor();
-            if (down < 0 || down >= rows || across < 0 || across >= cols) return;
-            if (state.value[down][across] != null) return;
-
-            inputLocked = true;
-            try {
-              if (Swap2.isPlacing) {
-                await Swap2.placeHumanMark(down, across);
-                return;
-              }
-
-              final userMark = turn.value;
-              final result = await placeAndResolve(down, across, userMark, ruleset);
-              if (result == null || result.gameOver || !result.turnDone) return;
-
-              if (Difficulty.current.value != null) {
-                await _playAiMove(ruleset);
-              }
-            } finally {
-              inputLocked = false;
-            }
-          },
-          child: RefOpacity((ref) {
-            final swap2Choice =
-                ref.watch(Swap2.phase) == .chooseAfter3 || ref.watch(Swap2.phase) == .chooseAfter5;
-            final hideOverlay = swap2Choice && !ref.watch(Swap2.optionsVisible);
-            if (hideOverlay) return 1.0;
-            return 1 - ref.watch(GameEnd.opacity) / 2;
-          }, child: RefPaint(paint)),
-        ),
-        const Positioned.fill(child: GameEnd()),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Padding(
+          padding: .all(constraints.biggest.shortestSide / 32),
+          child: const RefAspectRatio(
+            _boardAspectRatio,
+            child: Stack(
+              children: [
+                TapDetector(
+                  _handleTap,
+                  child: RepaintBoundary(child: RefOpacity(_opacity, child: RefPaint(paint))),
+                ),
+                Positioned.fill(child: GameEnd()),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

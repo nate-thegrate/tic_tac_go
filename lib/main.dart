@@ -12,6 +12,6 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
   }
 
-  await (loadShaders(), loadPrefs(), configureKeybinds()).wait;
+  await (loadShaders(), loadPrefs(), configureKeybinds(), configureSystemUi()).wait;
   runApp(const App());
 }

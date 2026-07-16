@@ -4,7 +4,8 @@
     {
       "name": "tic_tac_go",
       "request": "launch",
-      "type": "dart"
+      "type": "dart",
+      // "args": ["--wasm"],
     }
   ]
 }

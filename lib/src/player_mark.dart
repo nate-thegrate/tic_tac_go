@@ -26,8 +26,8 @@ enum PlayerMark {
   };
 
   Color get color => switch (this) {
-    x => const Color(0xFFFF6010),
-    o => const Color(0xFF0098A0),
+    x => const Color(0xFFFF1E00),
+    o => const Color(0xFF00F2FF),
   };
 
   Color get winnerGlow => switch (this) {

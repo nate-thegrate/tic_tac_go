@@ -13,23 +13,9 @@ import 'package:tic_tac_go/src/tap_detector.dart';
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
 
-  static double _boardAspectRatio(Ref ref) =>
-      ref.select(Board.state, (data) => data.cols / data.rows);
-
   @override
   Widget build(BuildContext context) {
-    return _MainContentLayout(
-      menu: Menu(),
-      board: LayoutBuilder(
-        builder: (context, constraints) {
-          return Padding(
-            padding: .all(constraints.biggest.shortestSide / 32),
-            child: const RefAspectRatio(_boardAspectRatio, child: Board()),
-          );
-        },
-      ),
-      bottomBar: const BottomBar(),
-    );
+    return const _MainContentLayout(menu: Menu(), board: Board(), bottomBar: BottomBar());
   }
 }
 
