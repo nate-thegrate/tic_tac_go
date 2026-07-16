@@ -14,10 +14,13 @@ import 'package:window_manager/window_manager.dart';
 
 final _keyboard = HardwareKeyboard.instance;
 
+final bool usingWindowManager = switch (defaultTargetPlatform) {
+  .windows || .macOS || .linux => !kIsWeb,
+  _ => false,
+};
+
 Future<void> configureKeybinds() async {
-  if (defaultTargetPlatform case .windows || .macOS || .linux when !kIsWeb) {
-    await windowManager.ensureInitialized();
-  }
+  if (usingWindowManager) await windowManager.ensureInitialized();
   _keyboard.addHandler(handleKeyEvent);
 }
 
@@ -34,6 +37,9 @@ bool handleKeyEvent(KeyEvent event) {
   };
 
   switch (event.logicalKey) {
+    case .keyW when usingWindowManager && controlPressed:
+      windowManager.destroy();
+
     case final key && (.arrowLeft || .arrowRight || .arrowUp || .arrowDown) when !isPlaying:
     case final key && (.keyW || .keyA || .keyS || .keyD) when !isPlaying:
       switch ((MenuPage.current.value, key)) {
@@ -76,7 +82,7 @@ bool handleKeyEvent(KeyEvent event) {
         ..cols -= 1;
 
     case _ when event is! KeyDownEvent:
-      return true;
+      return false;
 
     case .keyZ when isPlaying && controlPressed:
     case .keyU when isPlaying:

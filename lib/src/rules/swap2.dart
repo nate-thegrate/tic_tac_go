@@ -118,7 +118,7 @@ abstract final class Swap2 {
     Board.history.clear();
     phase.value = .none;
     optionsVisible.value = true;
-    GameEnd.opacity.reset();
+    GameEnd.opacity.value = 0;
     // After swap2 placement, white moves next.
     Board.turn.value = .o;
 
@@ -131,7 +131,7 @@ abstract final class Swap2 {
     placedInPhase.value = 0;
     optionsVisible.value = true;
     Board.history.clear();
-    GameEnd.opacity.reset();
+    GameEnd.opacity.value = 0;
     Board.turn.value = nextMark;
 
     // Second player places the two stones; AI only if second player is the AI.
@@ -237,7 +237,7 @@ abstract final class Swap2 {
     if (isChoosing) {
       phase.value = phase.value == .chooseAfter3 ? .opening3 : .extra2;
       optionsVisible.value = true;
-      GameEnd.opacity.reset();
+      GameEnd.opacity.value = 0;
     }
     undoOnce();
     if (placedInPhase.value > 0) placedInPhase.value--;

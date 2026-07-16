@@ -18,7 +18,7 @@ enum PlayerMark {
   /// - `x`: The user goes first, playing as "X" or black.
   /// - `o`: The AI goes first; the user plays as "O" or white.
   /// - `null`: Random player order.
-  static final userSelection = Stored.enumValue<PlayerMark?>(values, null);
+  static final userSelection = Stored.enumValue<PlayerMark?>(values, .x);
 
   PlayerMark get opponent => switch (this) {
     x => .o,

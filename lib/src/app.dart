@@ -4,14 +4,20 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
+import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/menu.dart';
 
-final playing = playingTransition.toggler;
-final playingTransition = Get.vsync(duration: const Duration(milliseconds: 175));
-
 final goMode = goModeTransition.toggler;
 final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
+
+final playing = playingTransition.toggler;
+final playingTransition = Get.vsync(
+  initialValue: tutorialDone.value ? 0 : 1,
+  duration: const Duration(milliseconds: 175),
+);
+
+final tutorialDone = Stored('tutorial', false);
 
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 const root3over2 = 0.8660254037844386;

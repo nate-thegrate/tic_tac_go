@@ -126,7 +126,7 @@ class Board extends StatelessWidget {
   static final turn = Get.it(PlayerMark.x);
 
   /// The human's mark in a 1-player game; `null` in 2-player.
-  static final humanPlayer = Get.it<PlayerMark?>(null);
+  static final humanPlayer = Get.it<PlayerMark?>(tutorialDone.value ? null : .x);
 
   /// True while a move animation and/or AI computation is in progress.
   static var inputLocked = false;
@@ -158,7 +158,7 @@ class Board extends StatelessWidget {
   });
 
   static void undo([_, _]) {
-    if (inputLocked || !canUndo.value) return;
+    if (inputLocked || !canUndo.value || !tutorialDone.value) return;
     BottomBar.undoTransition.forward(from: 0);
 
     void undoOnce() {
@@ -192,6 +192,7 @@ class Board extends StatelessWidget {
 
   static Future<void> runGameEndSequence(Ruleset ruleset) async {
     await Future<void>.delayed(const Duration(milliseconds: 1500));
+    tutorialDone.value = true;
     if (!state.value.isGameOver(ruleset)) return;
 
     if (GameEnd.opacity.isDismissed) {
@@ -303,7 +304,7 @@ class Board extends StatelessWidget {
 
   /// Resolves sides and starts the game (including an opening AI move when needed).
   static Future<void> startNewGame() async {
-    GameEnd.opacity.reset();
+    GameEnd.opacity.value = 0;
     state.clear();
     history.clear();
     currentMark = null;
@@ -328,7 +329,7 @@ class Board extends StatelessWidget {
   /// Leaves play mode and returns to the setup menu.
   static void backToMenu([_]) async {
     await playingTransition.reverse();
-    GameEnd.opacity.reset();
+    GameEnd.opacity.value = 0;
     state.clear();
     history.clear();
     turn.value = .x;
@@ -642,9 +643,14 @@ class Board extends StatelessWidget {
       children: [
         TapDetector(
           (position, size) async {
+            if (!tutorialDone.value && GameEnd.opacity.isCompleted) {
+              GameEnd.opacity.value = 0;
+              return;
+            }
             final ruleset = Ruleset.current.value;
             if (state.value.isGameOver(ruleset)) {
               GameEnd.opacity.value = 1;
+              tutorialDone.value = true;
               return;
             }
 
@@ -709,7 +715,10 @@ class Board extends StatelessWidget {
 class GameEnd extends RefWidget {
   const GameEnd({super.key});
 
-  static final opacity = Get.vsync(duration: const Duration(milliseconds: 800));
+  static final opacity = Get.vsync(
+    initialValue: tutorialDone.value ? 0 : 1,
+    duration: const Duration(milliseconds: 800),
+  );
 
   static final gameOver = Get.compute((ref) {
     return ref.watch(Board.state).isGameOver(ref.watch(Ruleset.current));
@@ -724,11 +733,21 @@ class GameEnd extends RefWidget {
   Widget build(BuildContext context) {
     final swap2Phase = ref.watch(Swap2.phase);
     final swap2Visible = ref.watch(Swap2.optionsVisible);
+    final isTutorialDone = ref.watch(tutorialDone);
     final isGoMode = ref.watch(goMode);
     final isGameOver = ref.watch(gameOver);
 
     final List<Widget> options;
-    if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
+    late final click = switch (defaultTargetPlatform) {
+      .android || .iOS || .fuchsia => 'Tap',
+      .linux || .macOS || .windows => 'Click',
+    };
+    if (!isTutorialDone) {
+      options = [
+        _BoardOverlayText(label: 'Try to get 3 in a row!', onSelect: () => opacity.value = 0),
+        _BoardOverlayText(label: '$click anywhere to start.', onSelect: () => opacity.value = 0),
+      ];
+    } else if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
       if (!swap2Visible) return const SizedBox.shrink();
       options = [
         _BoardOverlayText(

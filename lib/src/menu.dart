@@ -86,6 +86,7 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
 
 /// Back chevron / Esc: leave play or go to the previous menu page.
 void goBack([_, _]) {
+  if (!tutorialDone.value) return;
   if (playing.value) return Board.backToMenu();
 
   final page = MenuPage.current;
@@ -135,6 +136,10 @@ class BottomBar extends StatelessWidget {
   static final undoTransition = Get.vsync(duration: const Duration(milliseconds: 400));
   static final backTransition = Get.vsync();
 
+  static final showBar = Get.compute((ref) {
+    return ref.watch(tutorialDone) || !ref.watch(GameEnd.opacity.status).isCompleted;
+  });
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -149,6 +154,7 @@ class BottomBar extends StatelessWidget {
               child: RefPaint((ref) {
                 final t = Curves.easeInSine.transform(ref.watch(backTransition));
                 final disappearing = ref.select(MenuPage.current, (page) => page == .players);
+                if (!ref.watch(tutorialDone)) return;
                 final PaintRef(:canvas, size: Size(:width, :height)) = ref;
                 const strokeWidth = 5.0;
                 const xPad = 16.0;
@@ -160,7 +166,7 @@ class BottomBar extends StatelessWidget {
                   ..strokeCap = .round
                   ..color = Black(disappearing ? t : 1);
                 canvas
-                  ..translate(-t * 10, 0)
+                  ..translate(-t * 6, 0)
                   ..drawPath(
                     Path()
                       ..moveTo(width - xPad, yPad)
@@ -193,6 +199,7 @@ class BottomBar extends StatelessWidget {
 
                 final canUndo = ref.watch(Board.canUndo);
                 final playingAlpha = math.max(ref.watch(playingTransition) * 2 - 1, 0.0);
+                if (!ref.watch(tutorialDone)) return;
                 final paint = Paint()
                   ..color = Black(
                     canUndo
@@ -260,6 +267,8 @@ class BottomBar extends StatelessWidget {
               final swap2Phase = ref.watch(Swap2.phase);
               final swap2OptionsVisible = ref.watch(Swap2.optionsVisible);
 
+              if (!ref.watch(showBar)) return const SizedBox.shrink();
+
               final TextSpan textSpan;
               if (t < 0.5) {
                 textSpan = switch (menuPage) {
@@ -317,22 +326,26 @@ class BottomBar extends StatelessWidget {
         ),
         const SizedBox(width: 48),
         TapDetector(
-          (_, _) => goMode.toggle(),
+          (_, _) => tutorialDone.value ? goMode.toggle() : null,
           child: SizedBox.square(
             dimension: 48,
             child: RefPaint(
               (ref) {
-                ref.canvas.drawRect(
-                  Offset.zero & ref.size,
-                  Paint()
-                    ..color = ref.watch(goMode) ? const Color(0x60FFFFFF) : const Color(0x60F5C782),
-                );
+                final isGoMode = ref.watch(goMode);
+                if (ref.watch(tutorialDone)) {
+                  ref.canvas.drawRect(
+                    Offset.zero & ref.size,
+                    Paint()..color = isGoMode ? const Color(0x60FFFFFF) : const Color(0x60F5C782),
+                  );
+                }
               },
               child: Padding(
                 padding: const .all(3),
                 child: RefPaint((ref) {
                   final PaintRef(:canvas, size: Size(:width, :height)) = ref;
-                  if (ref.watch(goMode)) {
+                  final isGoMode = ref.watch(goMode);
+                  if (!ref.watch(tutorialDone)) return;
+                  if (isGoMode) {
                     final paint = Paint()
                       ..style = .stroke
                       ..strokeWidth = 3
@@ -390,7 +403,7 @@ enum MenuPage {
     boardSize => 'board size',
   };
 
-  static final GetValue<MenuPage> current = Get.it(players)
+  static final GetValue<MenuPage> current = Get.it(tutorialDone.value ? players : rules)
     ..hooked.addListener(() {
       if (current.value != .rules) return;
 
