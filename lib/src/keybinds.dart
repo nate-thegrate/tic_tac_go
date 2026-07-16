@@ -22,7 +22,7 @@ Future<void> configureKeybinds() async {
 }
 
 bool handleKeyEvent(KeyEvent event) {
-  if (event is! KeyDownEvent) return false;
+  if (event is KeyUpEvent) return false;
 
   late final isPlaying = playing.value;
   late final controlPressed = _keyboard.isControlPressed || _keyboard.isMetaPressed;
@@ -34,6 +34,50 @@ bool handleKeyEvent(KeyEvent event) {
   };
 
   switch (event.logicalKey) {
+    case final key && (.arrowLeft || .arrowRight || .arrowUp || .arrowDown) when !isPlaying:
+    case final key && (.keyW || .keyA || .keyS || .keyD) when !isPlaying:
+      switch ((MenuPage.current.value, key)) {
+        case (.players, .arrowLeft || .keyA) when event is KeyDownEvent:
+          twoPlayer.value = false;
+        case (.players, .arrowRight || .keyD) when event is KeyDownEvent:
+          twoPlayer.value = true;
+
+        case (.boardSize, .arrowUp || .keyW):
+          Board.state.rows -= 1;
+        case (.boardSize, .arrowDown || .keyS):
+          Board.state.rows += 1;
+        case (.boardSize, .arrowLeft || .keyA):
+          Board.state.cols -= 1;
+        case (.boardSize, .arrowRight || .keyD):
+          Board.state.cols += 1;
+
+        case (.rules, .arrowUp || .arrowDown || .keyW || .keyS):
+          final delta = (key == .arrowUp || key == .keyW) ? -1 : 1;
+          final minDim = Board.state.rows < Board.state.cols ? Board.state.rows : Board.state.cols;
+          final allowed = Ruleset.filtered(minDim).toList();
+
+          final index = allowed.indexOf(Ruleset.current.value);
+          final from = index < 0 ? 0 : index;
+          final next = (from + delta) % allowed.length;
+          Ruleset.current.value = allowed[next < 0 ? next + allowed.length : next];
+
+        default:
+          return !controlPressed;
+      }
+
+    case .equal || .numpadAdd || .add when onBoardSize:
+      Board.state
+        ..rows += 1
+        ..cols += 1;
+
+    case .minus || .numpadSubtract || .underscore when onBoardSize:
+      Board.state
+        ..rows -= 1
+        ..cols -= 1;
+
+    case _ when event is! KeyDownEvent:
+      return true;
+
     case .keyZ when isPlaying && controlPressed:
     case .keyU when isPlaying:
       if (!Board.canUndo.value) return false;
@@ -59,49 +103,8 @@ bool handleKeyEvent(KeyEvent event) {
         when !isPlaying && MenuPage.current.value == .players:
       twoPlayer.value = key == .digit1 || key == .numpad1;
 
-    case final key && (.arrowLeft || .arrowRight || .arrowUp || .arrowDown) when !isPlaying:
-    case final key && (.keyW || .keyA || .keyS || .keyD) when !isPlaying:
-      switch ((MenuPage.current.value, key)) {
-        case (.players, .arrowLeft || .keyA):
-          twoPlayer.value = false;
-        case (.players, .arrowRight || .keyD):
-          twoPlayer.value = true;
-
-        case (.boardSize, .arrowUp || .keyW):
-          Board.state.rows -= 1;
-        case (.boardSize, .arrowDown || .keyS):
-          Board.state.rows += 1;
-        case (.boardSize, .arrowLeft || .keyA):
-          Board.state.cols -= 1;
-        case (.boardSize, .arrowRight || .keyD):
-          Board.state.cols += 1;
-
-        case (.rules, .arrowUp || .arrowDown || .keyW || .keyS):
-          final delta = (key == .arrowUp || key == .keyW) ? -1 : 1;
-          final minDim = Board.state.rows < Board.state.cols ? Board.state.rows : Board.state.cols;
-          final allowed = Ruleset.filtered(minDim).toList();
-
-          final index = allowed.indexOf(Ruleset.current.value);
-          final from = index < 0 ? 0 : index;
-          final next = (from + delta) % allowed.length;
-          Ruleset.current.value = allowed[next < 0 ? next + allowed.length : next];
-
-        default:
-          return false;
-      }
-
-    case .equal || .numpadAdd || .add when onBoardSize:
-      Board.state
-        ..rows += 1
-        ..cols += 1;
-
-    case .minus || .numpadSubtract || .underscore when onBoardSize:
-      Board.state
-        ..rows -= 1
-        ..cols -= 1;
-
     default:
-      return false;
+      return !controlPressed;
   }
   return true;
 }
