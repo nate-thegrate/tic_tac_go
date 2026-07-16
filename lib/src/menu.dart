@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
@@ -9,6 +8,7 @@ import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/rules/connect6.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
+import 'package:tic_tac_go/src/tap_detector.dart';
 
 class MainContent extends StatelessWidget {
   const MainContent({super.key});
@@ -85,7 +85,7 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
 }
 
 /// Back chevron / Esc: leave play or go to the previous menu page.
-void goBack([_]) {
+void goBack([_, _]) {
   if (playing.value) return Board.backToMenu();
 
   final page = MenuPage.current;
@@ -96,7 +96,7 @@ void goBack([_]) {
 }
 
 /// Center strip / Enter: next menu page, start game, or toggle swap2 options.
-void primaryAction([_]) {
+void primaryAction([_, _]) {
   if (playing.value) {
     if (Swap2.isChoosing) {
       Swap2.toggleOptionsView();
@@ -141,9 +141,8 @@ class BottomBar extends StatelessWidget {
       mainAxisSize: .min,
       mainAxisAlignment: .center,
       children: [
-        GestureDetector(
-          behavior: .opaque,
-          onPanDown: goBack,
+        TapDetector(
+          goBack,
           child: SizedBox.square(
             dimension: height,
             child: RepaintBoundary(
@@ -173,9 +172,8 @@ class BottomBar extends StatelessWidget {
             ),
           ),
         ),
-        GestureDetector(
-          behavior: .opaque,
-          onPanDown: Board.undo,
+        TapDetector(
+          Board.undo,
           child: SizedBox.square(
             dimension: height,
             child: RepaintBoundary(
@@ -242,9 +240,8 @@ class BottomBar extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: GestureDetector(
-            behavior: .opaque,
-            onPanDown: primaryAction,
+          child: TapDetector(
+            primaryAction,
             child: RefBuilder((context) {
               final player = ref.watch(Board.turn);
               final ruleset = ref.watch(Ruleset.current);
@@ -319,10 +316,8 @@ class BottomBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 48),
-        GestureDetector(
-          onPanDown: (details) {
-            goMode.toggle();
-          },
+        TapDetector(
+          (_, _) => goMode.toggle(),
           child: SizedBox.square(
             dimension: 48,
             child: RefPaint(
@@ -416,17 +411,15 @@ class Menu extends RefWidget {
   const Menu({super.key});
 
   static Widget _boardSize(BuildContext context) {
-    void updateBoardSize(PositionedGestureDetails details) async {
-      final Offset(:dx, :dy) = details.localPosition;
-      final Size(:width, :height) = context.size!;
-      Board.state
-        ..cols = (dx / width * 19).ceil()
-        ..rows = (dy / height * 19).ceil();
-    }
-
-    return GestureDetector(
-      onPanDown: updateBoardSize,
-      onPanUpdate: updateBoardSize,
+    return TapDetector(
+      (position, size) async {
+        final Offset(:dx, :dy) = position;
+        final Size(:width, :height) = size;
+        Board.state
+          ..cols = (dx / width * 19).ceil()
+          ..rows = (dy / height * 19).ceil();
+      },
+      respondToDrag: true,
       child: RefPaint((ref) {
         final PaintRef(:canvas, size: Size(:width, :height)) = ref;
         final (rows, cols) = ref.select(Board.state, (data) => (data.rows, data.cols));
@@ -520,9 +513,8 @@ class Menu extends RefWidget {
     required bool selected,
     required VoidCallback onSelect,
   }) {
-    return GestureDetector(
-      behavior: .opaque,
-      onPanDown: (_) => onSelect(),
+    return TapDetector(
+      (_, _) => onSelect(),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Black(selected ? 0 : 0.1),
@@ -552,9 +544,8 @@ class Menu extends RefWidget {
         SizedBox(width: 185, child: Text(title, style: const TextStyle(fontSize: 28))),
         const SizedBox(height: 6),
         for (final value in values)
-          GestureDetector(
-            behavior: .opaque,
-            onPanDown: (_) => onSelect(value),
+          TapDetector(
+            (_, _) => onSelect(value),
             child: Row(
               mainAxisSize: .min,
               spacing: 14,
@@ -682,9 +673,8 @@ class Menu extends RefWidget {
         ),
         for (final option in Ruleset.filtered(minDimension))
           if (option.text(minDimension, isGoMode) case (:final label, description: _))
-            GestureDetector(
-              behavior: .opaque,
-              onPanDown: (_) => Ruleset.current.value = option,
+            TapDetector(
+              (_, _) => Ruleset.current.value = option,
               child: DecoratedBox(
                 decoration: ruleset == option
                     ? BoxDecoration(border: Border.all(width: 4))
@@ -730,10 +720,8 @@ class Menu extends RefWidget {
             children: [
               for (final page in MenuPage.values)
                 Expanded(
-                  child: GestureDetector(
-                    onPanDown: (details) {
-                      MenuPage.current.value = page;
-                    },
+                  child: TapDetector(
+                    (_, _) => MenuPage.current.value = page,
                     child: DecoratedBox(
                       decoration: BoxDecoration(color: Black(page == currentPage ? 0 : 0.1)),
                       child: Padding(

@@ -11,6 +11,7 @@ import 'package:tic_tac_go/src/menu.dart';
 import 'package:tic_tac_go/src/rules/connect6.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
+import 'package:tic_tac_go/src/tap_detector.dart';
 
 export 'package:tic_tac_go/src/player_mark.dart';
 
@@ -156,7 +157,7 @@ class Board extends StatelessWidget {
     return false;
   });
 
-  static void undo([_]) {
+  static void undo([_, _]) {
     if (inputLocked || !canUndo.value) return;
     BottomBar.undoTransition.forward(from: 0);
 
@@ -640,9 +641,8 @@ class Board extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        GestureDetector(
-          behavior: .opaque,
-          onPanDown: (details) async {
+        TapDetector(
+          (position, size) async {
             final ruleset = Ruleset.current.value;
             if (state.value.isGameOver(ruleset)) {
               GameEnd.opacity.jumpTo(1);
@@ -666,10 +666,9 @@ class Board extends StatelessWidget {
               return;
             }
 
-            final box = context.findRenderObject()! as RenderBox;
-            final Size(:width, :height) = box.size;
+            final Offset(:dx, :dy) = position;
+            final Size(:width, :height) = size;
             final BoardState(:cols, :rows) = state;
-            final Offset(:dx, :dy) = details.localPosition;
 
             final down = (dy / height * rows).floor();
             final across = (dx / width * cols).floor();
