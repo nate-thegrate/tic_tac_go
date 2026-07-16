@@ -1,6 +1,6 @@
 {
-    "name": "tic_tac_go",
-    "short_name": "tic_tac_go",
+    "name": "tic-tac-go",
+    "short_name": "tic-tac-go",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
