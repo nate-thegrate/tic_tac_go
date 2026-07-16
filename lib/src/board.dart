@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
@@ -354,7 +354,7 @@ class Board extends StatelessWidget {
   }
 
   static Paint markerPaint({required Size size, PlayerMark? player, required double strokeWidth}) {
-    final color = player?.color ?? Colors.black;
+    final color = player?.color ?? const Black();
     final Size(:width, :height) = size;
     final shader = _markerShaders[color] ??= markerProgram.fragmentShader()
       ..setFloat(0, width)
@@ -503,7 +503,7 @@ class Board extends StatelessWidget {
 
       // Layer order: shadow / glow drawn underneath stones, winning stones drawn on top
       for (final StoneData(:shadowRect, :elevation) in stones.where(notWinning)) {
-        canvas.drawShadow(Path()..addOval(shadowRect), Colors.black, elevation, true);
+        canvas.drawShadow(Path()..addOval(shadowRect), const Black(), elevation, true);
       }
       stones.where(notWinning).forEach(drawStone);
       for (final StoneData(rect: stoneRect, :mark, :opacity) in stones.where(isWinning)) {
@@ -847,7 +847,7 @@ class _RenderOutlinedText extends RenderBox {
             ..style = .stroke
             ..strokeWidth = _strokeWidth
             ..strokeJoin = .round
-            ..color = Colors.white,
+            ..color = const Color(0xFFFFFFFF),
           shadows: const [
             Shadow(blurRadius: 12),
             Shadow(blurRadius: 12),
@@ -867,7 +867,7 @@ class _RenderOutlinedText extends RenderBox {
         style: TextStyle(
           fontFamily: Font.permanentMarker,
           fontSize: _fontSize,
-          color: Colors.black,
+          color: const Black(),
         ),
       ),
       textAlign: .center,

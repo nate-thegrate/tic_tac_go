@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:get_hooked_storage/get_hooked_storage.dart';
@@ -107,10 +107,10 @@ class App extends StatelessWidget {
         style: TextStyle(fontFamily: Font.permanentMarker, fontSize: 22, color: Black()),
         child: AnnotatedRegion(
           value: SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
+            statusBarColor: Black(0),
             statusBarIconBrightness: .light,
             statusBarBrightness: .dark,
-            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarColor: Black(0),
             systemNavigationBarIconBrightness: .light,
             systemNavigationBarContrastEnforced: false,
           ),
@@ -205,7 +205,7 @@ class Backdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = DecoratedBox(
       key: GlobalObjectKey(context),
-      decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 1)]),
+      decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Black(0.38), blurRadius: 1)]),
       child: const RefPaint(
         paint,
         expanded: false,

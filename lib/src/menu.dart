@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
@@ -554,7 +554,7 @@ class Menu extends RefWidget {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       shape: .circle,
-                      color: isSelected(value) ? Colors.black : null,
+                      color: isSelected(value) ? const Black() : null,
                       border: .all(color: const Black(), width: 2),
                     ),
                   ),

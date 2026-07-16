@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:tic_tac_go/src/board.dart';
 

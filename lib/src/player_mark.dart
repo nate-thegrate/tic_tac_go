@@ -3,7 +3,7 @@ library;
 
 import 'dart:collection';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:meta/meta.dart';
 import 'package:tic_tac_go/src/rules/renju.dart';

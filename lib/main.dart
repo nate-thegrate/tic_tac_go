@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:marionette_flutter/marionette_flutter.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/prefs.dart';
