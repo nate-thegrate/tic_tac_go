@@ -4,6 +4,7 @@ import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
+import 'package:tic_tac_go/src/app.dart' show rng;
 
 /// Swap2 opening / color-choice flow.
 enum Swap2Phase {
@@ -106,10 +107,10 @@ abstract final class Swap2 {
 
   static void _aiResolveChoice() {
     if (phase.value == .chooseAfter3) {
-      final pickBlack = _rng.nextDouble() < 0.35;
+      final pickBlack = rng.nextDouble() < 0.35;
       applyColorChoice(pickBlack ? .x : .o);
     } else {
-      applyColorChoice(_rng.nextDouble() < 0.5 ? .x : .o);
+      applyColorChoice(rng.nextDouble() < 0.5 ? .x : .o);
     }
   }
 
@@ -252,14 +253,12 @@ abstract final class Swap2 {
     Board.turn.value = nextMark;
   }
 
-  static final _rng = math.Random();
-
   /// Absolute cells for the initial three stones: black, white, black.
   static List<(int row, int col)> planOpening3(int rows, int cols) {
     final center = (rows ~/ 2, cols ~/ 2);
-    final template = _opening3Templates[_rng.nextInt(_opening3Templates.length)];
-    final rot = _rng.nextInt(4);
-    final mirror = _rng.nextBool();
+    final template = _opening3Templates[rng.nextInt(_opening3Templates.length)];
+    final rot = rng.nextInt(4);
+    final mirror = rng.nextBool();
     return _mapTemplate(template, center, rot, mirror, rows, cols);
   }
 
@@ -270,9 +269,9 @@ abstract final class Swap2 {
     final occupied = board.occupiedCells.toSet();
     final center = _centroid(occupied, rows, cols);
 
-    final pairs = List.of(_extra2Templates)..shuffle(_rng);
-    final rot = _rng.nextInt(4);
-    final mirror = _rng.nextBool();
+    final pairs = List.of(_extra2Templates)..shuffle(rng);
+    final rot = rng.nextInt(4);
+    final mirror = rng.nextBool();
     for (final pair in pairs) {
       final mapped = _mapTemplate(pair, center, rot, mirror, rows, cols);
       if (mapped[0] != mapped[1] &&
@@ -426,7 +425,7 @@ abstract final class Swap2 {
           ring.add((r, c));
         }
       }
-      if (ring.isNotEmpty) return ring[_rng.nextInt(ring.length)];
+      if (ring.isNotEmpty) return ring[rng.nextInt(ring.length)];
     }
     for (var r = 1; r < rows - 1; r++) {
       for (var c = 1; c < cols - 1; c++) {

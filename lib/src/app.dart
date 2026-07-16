@@ -16,6 +16,8 @@ final goModeTransition = Get.vsync(duration: const Duration(milliseconds: 175));
 final devicePixelRatio = WidgetsBinding.instance.renderViews.first.configuration.devicePixelRatio;
 const root3over2 = 0.8660254037844386;
 
+final rng = math.Random();
+
 abstract final class Font {
   static const patrickHand = 'patrick hand';
   static const permanentMarker = 'permanent marker';

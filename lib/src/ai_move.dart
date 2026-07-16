@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:get_hooked_storage/get_hooked_storage.dart';
+import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
@@ -25,6 +26,9 @@ Future<(int row, int col)> aiMove(
   final winLength = ruleset.winLengthForSize(data.rows, data.cols);
   final board = data.copyMutable();
   final input = (board: board, winLength: winLength, ruleset: ruleset, toMove: toMove);
+
+  // Easy AI does a good move 25% of the time.
+  if (difficulty == .easy && rng.nextDouble() < 0.25) difficulty = .hard;
 
   return switch (difficulty) {
     // Win → block → random. SynchronousFuture (no isolate).
@@ -62,7 +66,7 @@ typedef _OpenThreats = ({int openFours, int openThrees});
 extension<T> on List<T> {
   T get random {
     assert(isNotEmpty);
-    return this[math.Random().nextInt(length)];
+    return this[rng.nextInt(length)];
   }
 }
 

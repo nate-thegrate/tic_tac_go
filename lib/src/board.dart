@@ -136,7 +136,7 @@ class Board extends StatelessWidget {
       humanPlayer.value = null;
       Swap2.firstPlayerIsHuman = true;
     } else {
-      humanPlayer.value = PlayerMark.userSelection.value ?? (math.Random().nextBool() ? .x : .o);
+      humanPlayer.value = PlayerMark.userSelection.value ?? (rng.nextBool() ? .x : .o);
       // First player places the swap2 opening; human is first iff they play black initially.
       Swap2.firstPlayerIsHuman = humanPlayer.value == .x;
     }
@@ -346,7 +346,7 @@ class Board extends StatelessWidget {
   static late final ui.FragmentProgram markerProgram;
   static final _markerShaders = <(Size, Color, double grain), ui.FragmentShader>{};
 
-  static final int _gameSeed = math.Random().nextInt(0x1000);
+  static final int _gameSeed = rng.nextInt(0x1000);
   static double _rng(int seed) {
     var x = (seed + _gameSeed) * 1103515245 + 12345;
     x = (x ^ (x >> 16)) & 0x7fffffff;
