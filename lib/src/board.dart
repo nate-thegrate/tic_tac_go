@@ -193,12 +193,11 @@ class Board extends StatelessWidget {
   static Future<void> runGameEndSequence(Ruleset ruleset) async {
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     if (!state.value.isGameOver(ruleset)) return;
-    // Await so placement lock is held until the overlay is up; jump if already
-    // partially faded in (e.g. swap2 reused this controller).
-    if (GameEnd.opacity.value == 0) {
-      await GameEnd.opacity.animateTo(1, duration: const Duration(milliseconds: 800));
+
+    if (GameEnd.opacity.isDismissed) {
+      await GameEnd.opacity.animateTo(1, curve: Curves.easeOutSine);
     } else {
-      GameEnd.opacity.jumpTo(1);
+      GameEnd.opacity.value = 1;
     }
   }
 
@@ -645,7 +644,7 @@ class Board extends StatelessWidget {
           (position, size) async {
             final ruleset = Ruleset.current.value;
             if (state.value.isGameOver(ruleset)) {
-              GameEnd.opacity.jumpTo(1);
+              GameEnd.opacity.value = 1;
               return;
             }
 
@@ -710,7 +709,11 @@ class Board extends StatelessWidget {
 class GameEnd extends RefWidget {
   const GameEnd({super.key});
 
-  static final opacity = Get.vsyncValue(0.0, curve: Curves.easeOutSine);
+  static final opacity = Get.vsync(duration: const Duration(milliseconds: 800));
+
+  static final gameOver = Get.compute((ref) {
+    return ref.watch(Board.state).isGameOver(ref.watch(Ruleset.current));
+  });
 
   static void backToMenu() {
     MenuPage.current.value = .players;
@@ -719,16 +722,10 @@ class GameEnd extends RefWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rebuild when ruleset changes even if the board snapshot does not.
-    ref.watch(Ruleset.current);
     final swap2Phase = ref.watch(Swap2.phase);
     final swap2Visible = ref.watch(Swap2.optionsVisible);
     final isGoMode = ref.watch(goMode);
-    // Always subscribe (not only in an else-if): RefElement keeps the first
-    // select() selector for the lifetime of the subscription, and a conditional
-    // select can miss board updates. Read Ruleset.current inside the selector
-    // so a ruleset change is not sticky from the first subscription.
-    final gameOver = ref.select(Board.state, (data) => data.isGameOver(Ruleset.current.value));
+    final isGameOver = ref.watch(gameOver);
 
     final List<Widget> options;
     if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
@@ -745,7 +742,7 @@ class GameEnd extends RefWidget {
         if (swap2Phase == .chooseAfter3)
           const _BoardOverlayText(label: 'Add 2 moves', onSelect: Swap2.applyAddTwoMoves),
       ];
-    } else if (gameOver) {
+    } else if (isGameOver) {
       options = const [
         _BoardOverlayText(label: 'Play again', onSelect: Board.startNewGame),
         _BoardOverlayText(label: 'Back to menu', onSelect: backToMenu),

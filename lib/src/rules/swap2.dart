@@ -93,23 +93,14 @@ abstract final class Swap2 {
     if (!isChoosing) return;
     final show = !optionsVisible.value;
     optionsVisible.value = show;
-    GameEnd.opacity.jumpTo(show ? 1 : 0);
+    GameEnd.opacity.value = show ? 1 : 0;
   }
 
   static void _enterChoice(Swap2Phase choicePhase) {
     phase.value = choicePhase;
     optionsVisible.value = true;
-    GameEnd.opacity.jumpTo(1);
+    GameEnd.opacity.value = 1;
     if (!humanIsChooser) {
-      _aiResolveChoice();
-    }
-  }
-
-  static void _aiResolveChoice() {
-    if (phase.value == .chooseAfter3) {
-      final pickBlack = rng.nextDouble() < 0.35;
-      applyColorChoice(pickBlack ? .x : .o);
-    } else {
       applyColorChoice(rng.nextDouble() < 0.5 ? .x : .o);
     }
   }

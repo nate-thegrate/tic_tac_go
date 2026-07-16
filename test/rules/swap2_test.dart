@@ -139,7 +139,7 @@ void main() {
     test('undoPlacementStone from chooseAfter3 returns to opening3', () {
       Swap2.phase.value = .chooseAfter3;
       Swap2.placedInPhase.value = 3;
-      GameEnd.opacity.jumpTo(1);
+      GameEnd.opacity.value = 1;
       Swap2.undoPlacementStone(() {});
       expect(Swap2.phase.value, Swap2Phase.opening3);
       expect(Swap2.placedInPhase.value, 2);
@@ -150,7 +150,7 @@ void main() {
     test('undoPlacementStone from chooseAfter5 returns to extra2', () {
       Swap2.phase.value = .chooseAfter5;
       Swap2.placedInPhase.value = 2;
-      GameEnd.opacity.jumpTo(1);
+      GameEnd.opacity.value = 1;
       Swap2.undoPlacementStone(() {});
       expect(Swap2.phase.value, Swap2Phase.extra2);
       expect(Swap2.placedInPhase.value, 1);
