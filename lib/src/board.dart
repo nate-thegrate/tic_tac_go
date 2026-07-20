@@ -20,13 +20,16 @@ extension on int {
 }
 
 class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
-  BoardState([int rows = 3, int cols = 3])
-    : _list = List.generate(rows, (_) => List.filled(cols, null));
+  BoardState();
 
   @override
   BoardData get value => _value;
   late BoardData _value = BoardData(_list);
-  List<List<PlayerMark?>> _list;
+  var _list = <List<PlayerMark?>>[
+    [.x, .o, .x],
+    [.o, .x, .o],
+    [.x, .o, .x],
+  ];
 
   int get cols => _list.first.length;
   set cols(int value) {
@@ -307,6 +310,7 @@ class Board extends StatelessWidget {
     GameEnd.opacity.value = 0;
     state.clear();
     history.clear();
+    inputLocked = false;
     currentMark = null;
     Connect6.reset();
     _assignSides();
@@ -344,7 +348,19 @@ class Board extends StatelessWidget {
   static final playerMarkAnimation = Get.vsync();
 
   static late final ui.FragmentProgram markerProgram;
-  static final _markerShaders = <Color, ui.FragmentShader>{};
+  static final markerShaders = <Color, ui.FragmentShader>{
+    if (GetQuery.size.value case Size(:final width, :final height))
+      for (final color in [const Black(), PlayerMark.x.color, PlayerMark.o.color])
+        color: markerProgram.fragmentShader()
+          ..setFloat(0, width)
+          ..setFloat(1, height)
+          ..setFloat(2, color.r)
+          ..setFloat(3, color.g)
+          ..setFloat(4, color.b)
+          ..setFloat(5, color.a)
+          ..setFloat(6, devicePixelRatio)
+          ..setFloat(7, 1),
+  };
 
   static final int _gameSeed = rng.nextInt(0x1000);
   static double _rng(int seed) {
@@ -356,7 +372,7 @@ class Board extends StatelessWidget {
   static Paint markerPaint({required Size size, PlayerMark? player, required double strokeWidth}) {
     final color = player?.color ?? const Black();
     final Size(:width, :height) = size;
-    final shader = _markerShaders[color] ??= markerProgram.fragmentShader()
+    final shader = markerShaders[color] ??= markerProgram.fragmentShader()
       ..setFloat(0, width)
       ..setFloat(1, height)
       ..setFloat(2, color.r)
@@ -376,17 +392,11 @@ class Board extends StatelessWidget {
   }
 
   static void paint(PaintRef ref) {
+    markerShaders; // ignore: unnecessary_statements, ensuring the map is initialized
     final board = ref.watch(state);
     final ruleset = ref.watch(Ruleset.current);
     final t = ref.watch(playerMarkAnimation);
     final isGoMode = ref.watch(goMode);
-    final inMenu = ref.watch(playingTransition.status).isDismissed;
-    final shouldSkipPaint = switch (ref.watch(goModeTransition.status)) {
-      .completed => !isGoMode,
-      .dismissed => isGoMode,
-      .forward || .reverse => false,
-    };
-    if (inMenu || shouldSkipPaint) return;
     if (playerMarkAnimation.isActive) ref.setWillChangeHint();
 
     final PaintRef(:canvas, :size) = ref;
@@ -595,7 +605,7 @@ class Board extends StatelessWidget {
         }
       }
 
-      if (winningRun case final cells? when !cells.first.$1.isNegative) {
+      if (winningRun case final cells? when t > 0 && !cells.first.$1.isNegative) {
         final (firstRow, firstCol) = cells.first;
         final (lastRow, lastCol) = cells.last;
         var start = Offset((firstCol + 0.5) * cellWidth, (firstRow + 0.5) * cellHeight);
@@ -617,7 +627,7 @@ class Board extends StatelessWidget {
 
   static void _handleTap(Offset position, Size size) async {
     if (!tutorialDone.value && GameEnd.opacity.isCompleted) {
-      GameEnd.opacity.value = 0;
+      startNewGame();
       return;
     }
     final ruleset = Ruleset.current.value;
@@ -739,8 +749,8 @@ class GameEnd extends RefWidget {
     };
     if (!isTutorialDone) {
       options = [
-        _BoardOverlayText(label: 'Try to get 3 in a row!', onSelect: () => opacity.value = 0),
-        _BoardOverlayText(label: '$click anywhere to start.', onSelect: () => opacity.value = 0),
+        _BoardOverlayText(label: 'Try to get 3 in a row!', onSelect: Board.startNewGame),
+        _BoardOverlayText(label: '$click anywhere to start.', onSelect: Board.startNewGame),
       ];
     } else if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
       if (!swap2Visible) return const SizedBox.shrink();

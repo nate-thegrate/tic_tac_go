@@ -67,3 +67,12 @@ void foo(Rect rect) {
 ## get_hooked package
 
 This project uses **get_hooked** for reactive state management; it's declared as a local path dependency in `pubspec.yaml`.
+
+# Firebase
+
+To update the [web release](https://play.tic-tac-go.app/), run:
+
+```powershell
+flutter build web --wasm --release
+firebase deploy --only hosting
+```

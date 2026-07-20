@@ -11,8 +11,6 @@ import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 
-final twoPlayer = Stored('two player', false);
-
 /// Chooses a cell for [toMove] under [ruleset] / [difficulty].
 ///
 /// [toMove] must be the side about to place (e.g. [Board.turn]); do not infer it
@@ -27,25 +25,23 @@ Future<(int row, int col)> aiMove(
   final board = data.copyMutable();
   final input = (board: board, winLength: winLength, ruleset: ruleset, toMove: toMove);
 
-  // Easy AI does a good move 25% of the time.
-  if (difficulty == .easy && rng.nextDouble() < 0.25) difficulty = .hard;
+  // Easy AI does a good move a third of the time.
+  if (difficulty == .easy && rng.nextDouble() < 1 / 3) difficulty = .hard;
 
   return switch (difficulty) {
-    // Win → block → random. SynchronousFuture (no isolate).
     .easy => SynchronousFuture(_aiEasy(input)),
-    // Win → block → defend threats → attack → rank open-segment ends.
     .hard => compute(_aiHard, input),
-    // Hard's option set, then symmetry / multi-ply search on ties.
     .brutal => compute(_aiBrutal, input),
   };
 }
+
+final twoPlayer = Stored('two player', false);
 
 enum Difficulty {
   easy,
   hard,
   brutal;
 
-  /// The user's chosen difficulty.
   static final current = Get.compute((ref) => ref.watch(twoPlayer) ? null : ref.watch(selected));
 
   static final selected = Stored.enumValue(values, easy);

@@ -63,8 +63,7 @@ class _MainContentLayoutState extends RefLayoutState<_MainContentLayout> {
       Offset(-menuSize.width, (boardSize.height - menuSize.height) / 2) * t & menuSize,
     );
     board.offset = Offset(
-      ((menuSize.width - boardSize.width) / 2 + menuSize.width) * (1 - t) +
-          (width - boardSize.width) * t / 2,
+      width * (1 - t) + (width - boardSize.width) * t / 2,
       (menuSize.height - boardSize.height) / 2 * (1 - t),
     );
   }
