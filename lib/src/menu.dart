@@ -393,14 +393,8 @@ enum MenuPage {
     ..hooked.addListener(() {
       if (current.value != .rules) return;
 
-      switch (Ruleset.current.value) {
-        case .gomoku || .swap2:
-          return;
-        case .renju:
-          if (Board.state.value case BoardData(rows: >= 5, cols: >= 5)) return;
-        case .connect6:
-          if (Board.state.value case BoardData(rows: >= 6, cols: >= 6)) return;
-      }
+      final availableRulesets = Ruleset.filtered(math.min(Board.state.cols, Board.state.rows));
+      if (availableRulesets.contains(Ruleset.current.value)) return;
 
       Ruleset.current.value = .gomoku;
     });
