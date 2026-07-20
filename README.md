@@ -4,7 +4,7 @@
 
 # tic-tac-go
 
-A Flutter take on **[m,n,k-games](https://en.wikipedia.org/wiki/M,n,k-game)** with a visual aesthetic that can be switched out on the fly.
+An **[m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game)** with a visual aesthetic that can be switched out on the fly.
 
 This project is an open-source WIP and will eventually be published for free on the app stores: Android, iOS, Windows, and MacOS.
 

@@ -70,8 +70,6 @@ extension<T> on List<T> {
   }
 }
 
-// --- Board helpers -----------------------------------------------------------
-
 /// Side to move after a stone was just placed, for multi-ply search.
 ///
 /// Connect6: black places 1, then OO / XX / OO / … (matches [Connect6.recomputeTurnFromBoard]).
@@ -104,8 +102,6 @@ List<_Cell> _emptiesNear(
   }
   return cells;
 }
-
-// --- Candidates --------------------------------------------------------------
 
 /// Nearby empties; center only on an empty board.
 List<_Cell> _candidateMoves(List<List<PlayerMark?>> board, int winLength) {
@@ -141,8 +137,6 @@ List<_Cell> _legalPool(
       if (cell.isLegalOn(board, mark, ruleset)) cell,
   ];
 }
-
-// --- Wins --------------------------------------------------------------------
 
 bool _isWinningPlacement(
   List<List<PlayerMark?>> board,
@@ -182,8 +176,6 @@ int _immediateWinCountNear(
   final nearby = _emptiesNear(board, focusRow, focusCol, winLength, includeCenter: true);
   return _winningPlacements(board, nearby, player, winLength, ruleset).length;
 }
-
-// --- Open runs / threats -----------------------------------------------------
 
 /// Open both-ends runs of exactly [runLength] for optional [onlyMark].
 List<({PlayerMark mark, _Cell a, _Cell b})> _openRuns(
@@ -275,8 +267,6 @@ List<_Cell> _doubleThreatPoints(
           cell,
   ];
 }
-
-// --- Ranking -----------------------------------------------------------------
 
 int _segmentCountForPlayer(
   List<List<PlayerMark?>> board,
@@ -400,8 +390,6 @@ List<_Cell>? _rankedIfAny(
   return _highestRankedMoves(board, filtered, winLength, ruleset, toMove);
 }
 
-// --- Hard policy -------------------------------------------------------------
-
 List<_Cell> _hardMoveOptions(
   List<List<PlayerMark?>> board,
   int winLength,
@@ -457,8 +445,6 @@ List<_Cell> _hardMoveOptions(
   return narrowed ?? _highestRankedMoves(board, pool, winLength, ruleset, ai);
 }
 
-// --- Difficulty entry points -------------------------------------------------
-
 _Cell _aiEasy(_AiInput input) {
   final (:board, :winLength, :ruleset, :toMove) = input;
   // Empty board → center via [_legalPool] / [_candidateMoves].
@@ -491,8 +477,6 @@ _Cell _aiHard(_AiInput input) {
   assert(options.isNotEmpty, 'AI called on a full board');
   return options.random;
 }
-
-// --- Brutal search -----------------------------------------------------------
 
 List<_Cell Function(_Cell)> _boardSymmetries(List<List<PlayerMark?>> board) {
   final rows = board.length;

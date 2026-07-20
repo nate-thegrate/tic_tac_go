@@ -47,6 +47,8 @@ Use [dot shorthands](https://dart.dev/language/dot-shorthands) to improve readab
 
 Avoid defining global or `static` fields that are only used once, if they can just be inlined.
 
+Avoid writing comments when it's possible to write self-documenting code instead. Don't use comments as headers to split a file into multiple sections.
+
 Avoid using 1 or 2-letter variable names. Prefer [destructuring class instances](https://dart.dev/language/patterns#destructuring-class-instances) when using a single object to assign multiple local variables.
 
 ```dart
