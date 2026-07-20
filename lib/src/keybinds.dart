@@ -84,14 +84,18 @@ bool handleKeyEvent(KeyEvent event) {
     case _ when event is! KeyDownEvent:
       return false;
 
+    case .f11 when fullScreenF11:
+    case .keyF when isMacOSDesktop && controlPressed:
+      windowManager.isFullScreen().then((value) => windowManager.setFullScreen(!value));
+
+    // Function keys
+    case LogicalKeyboardKey(keyId: >= 0x00100000801 && <= 0x00100000818):
+      return false;
+
     case .keyZ when isPlaying && controlPressed:
     case .keyU when isPlaying:
       if (!Board.canUndo.value) return false;
       Board.undo();
-
-    case .f11 when fullScreenF11:
-    case .keyF when isMacOSDesktop && controlPressed:
-      windowManager.isFullScreen().then((value) => windowManager.setFullScreen(!value));
 
     case .escape when isPlaying || MenuPage.current.value != .players:
       goBack();

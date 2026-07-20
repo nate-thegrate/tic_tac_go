@@ -64,26 +64,6 @@ void foo(Rect rect) {
 }
 ```
 
-When awaiting multiple independent futures, use a record of futures with [`.wait`](https://api.dart.dev/dart-async/FutureRecord2/wait.html) and destructure the results.
-
-```dart
-// BAD
-final programs = await Future.wait([
-  ui.FragmentProgram.fromAsset('shaders/paper.frag'),
-  ui.FragmentProgram.fromAsset('shaders/marker.frag'),
-]);
-paperShader = programs[0].fragmentShader();
-markerShader = programs[1].fragmentShader();
-
-// GOOD
-final (paper, marker) = await (
-  ui.FragmentProgram.fromAsset('shaders/paper.frag'),
-  ui.FragmentProgram.fromAsset('shaders/marker.frag'),
-).wait;
-paperShader = paper.fragmentShader();
-markerShader = marker.fragmentShader();
-```
-
 ## get_hooked package
 
 This project uses **get_hooked** for reactive state management; it's declared as a local path dependency in `pubspec.yaml`.

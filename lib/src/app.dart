@@ -40,17 +40,16 @@ Future<void> loadShaders() async {
     ui.FragmentProgram.fromAsset('shaders/marker.frag'),
   );
 
-  final backgroundBuffer = await ui.ImmutableBuffer.fromAsset('assets/wood_backdrop.jpg');
-  final descriptor = await ui.ImageDescriptor.encoded(backgroundBuffer);
-  final codec = await descriptor.instantiateCodec();
+  final ByteData(:buffer, :offsetInBytes, :lengthInBytes) = await rootBundle.load(
+    'assets/wood_backdrop.jpg',
+  );
+  final codec = await ui.instantiateImageCodec(buffer.asUint8List(offsetInBytes, lengthInBytes));
   try {
     final frame = await codec.getNextFrame();
     final image = frame.image;
     Backdrop.woodShader = ui.ImageShader(image, .decal, .decal, Matrix4.identity().storage);
   } finally {
     codec.dispose();
-    descriptor.dispose();
-    backgroundBuffer.dispose();
   }
 
   final (paper, marker) = await paperMarkerFutures.wait;
