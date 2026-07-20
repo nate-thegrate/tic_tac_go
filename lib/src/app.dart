@@ -230,7 +230,8 @@ class Backdrop extends StatelessWidget {
       final wideEnough = availableWidth >= BottomBar.minWidth;
       final tallEnough = availableHeight >= minHeight;
 
-      final widthIsTighter = availableWidth * minHeight <= availableHeight * BottomBar.minWidth;
+      late final widthIsTighter =
+          availableWidth * minHeight <= availableHeight * BottomBar.minWidth;
 
       final Widget widget;
       if (wideEnough && tallEnough) {
@@ -240,11 +241,7 @@ class Backdrop extends StatelessWidget {
         widget = FittedBox(
           fit: .fitWidth,
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: BottomBar.minWidth,
-              maxWidth: BottomBar.minWidth,
-              maxHeight: maxHeight,
-            ),
+            constraints: BoxConstraints(maxWidth: BottomBar.minWidth, maxHeight: maxHeight),
             child: content,
           ),
         );
@@ -253,11 +250,7 @@ class Backdrop extends StatelessWidget {
         widget = FittedBox(
           fit: .fitHeight,
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: minHeight,
-              maxHeight: minHeight,
-              maxWidth: maxWidth,
-            ),
+            constraints: BoxConstraints(maxHeight: minHeight, maxWidth: maxWidth),
             child: content,
           ),
         );
