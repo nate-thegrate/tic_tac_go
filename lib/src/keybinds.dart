@@ -24,6 +24,23 @@ Future<void> configureKeybinds() async {
   _keyboard.addHandler(handleKeyEvent);
 }
 
+/// Used for [TargetPlatform.windows] to get around a full screen UI bug.
+bool _shouldMaximize = false;
+
+void _toggleFullScreen() async {
+  final isFullScreen = await windowManager.isFullScreen();
+  final shouldMaximize = _shouldMaximize;
+  if (!isFullScreen && defaultTargetPlatform == .windows && await windowManager.isMaximized()) {
+    await windowManager.unmaximize();
+    _shouldMaximize = true;
+  }
+  await windowManager.setFullScreen(!isFullScreen);
+  if (shouldMaximize) {
+    await windowManager.maximize();
+    _shouldMaximize = false;
+  }
+}
+
 bool handleKeyEvent(KeyEvent event) {
   if (event is KeyUpEvent) return false;
 
@@ -86,7 +103,7 @@ bool handleKeyEvent(KeyEvent event) {
 
     case .f11 when fullScreenF11:
     case .keyF when isMacOSDesktop && controlPressed:
-      windowManager.isFullScreen().then((value) => windowManager.setFullScreen(!value));
+      _toggleFullScreen();
 
     // Function keys
     case LogicalKeyboardKey(keyId: >= 0x00100000801 && <= 0x00100000818):
