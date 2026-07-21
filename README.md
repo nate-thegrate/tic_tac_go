@@ -4,9 +4,9 @@
 
 # tic-tac-go
 
-An **[m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game)** with a visual aesthetic that can be switched out on the fly.
+Play here: **[tic-tac-go.app](https://tic-tac-go.app/)**
 
-This project is an open-source WIP and will eventually be published for free on the app stores: Android, iOS, Windows, and MacOS.
+<br>
 
 ## Features
 
@@ -15,3 +15,17 @@ This project is an open-source WIP and will eventually be published for free on 
 - **Player modes** — local 2-player, or 1-player with adjustable AI difficulty
 - **Rulesets** — gomoku, renju, and swap2
 - **Custom rendering** — custom fragment shaders for paper surface grain and marker ink strokes
+
+## Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| **Arrow keys** / **WASD** | Navigate the menu (players, board size, rules) |
+| **+** / **−** | Grow or shrink both board dimensions (board size menu) |
+| **Enter** / **Space** | Same as clicking the bottom text |
+| **Esc** | Go back |
+| **G** | Toggle marker/Go visual mode |
+| **R** | Start a new game (while playing) |
+| **U** or **Ctrl/⌘+Z** | Undo the last move (while playing) |
+| **F11** / **⌘+F** (macOS) | Toggle fullscreen |
+| **Ctrl+W** | Close the window (desktop) |
