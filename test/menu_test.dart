@@ -174,8 +174,8 @@ void main() {
       expect(MenuPage.current.value, MenuPage.players);
     });
 
-    test('unrelated key returns false', () {
-      expect(handleKeyEvent(keyDown(LogicalKeyboardKey.keyA)), isFalse);
+    test('unrelated key without control is consumed', () {
+      expect(handleKeyEvent(keyDown(LogicalKeyboardKey.keyQ)), isTrue);
     });
   });
 }

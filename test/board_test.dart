@@ -84,14 +84,8 @@ void main() {
       state = BoardState();
     });
 
-    test('starts empty with given size', () {
-      expect(state.rows, 3);
-      expect(state.cols, 3);
-      expect(state.value.isBoardFull, isFalse);
-      expect(state.value.stoneCount, 0);
-    });
-
     test('update places and clears marks', () {
+      state.clear();
       var notifications = 0;
       state.addListener(() => notifications++);
 

@@ -162,16 +162,16 @@ void main() {
       Board.history.add((0, 0));
       Swap2.phase.value = .chooseAfter3;
       Board.humanPlayer.value = null;
-      expect(Board.canUndo, isTrue);
+      expect(Board.canUndo.value, isTrue);
 
       Board.humanPlayer.value = .x;
-      expect(Board.canUndo, isFalse);
+      expect(Board.canUndo.value, isFalse);
 
       Swap2.phase.value = .chooseAfter5;
       Board.humanPlayer.value = null;
-      expect(Board.canUndo, isTrue);
+      expect(Board.canUndo.value, isTrue);
       Board.humanPlayer.value = .o;
-      expect(Board.canUndo, isFalse);
+      expect(Board.canUndo.value, isFalse);
     });
   });
 

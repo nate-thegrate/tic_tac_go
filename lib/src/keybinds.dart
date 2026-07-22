@@ -128,7 +128,7 @@ bool handleKeyEvent(KeyEvent event) {
 
     case final key && (.digit1 || .numpad1 || .digit2 || .numpad2)
         when !isPlaying && MenuPage.current.value == .players:
-      twoPlayer.value = key == .digit1 || key == .numpad1;
+      twoPlayer.value = key == .digit2 || key == .numpad2;
 
     default:
       return !controlPressed;
