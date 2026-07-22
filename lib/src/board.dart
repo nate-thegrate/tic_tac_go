@@ -4,10 +4,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
-import 'package:tic_tac_go/src/player_mark.dart';
+import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/menu.dart';
+import 'package:tic_tac_go/src/player_mark.dart';
 import 'package:tic_tac_go/src/rules/connect6.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
@@ -24,7 +24,7 @@ class BoardState with ChangeNotifier implements ValueListenable<BoardData> {
 
   @override
   BoardData get value => _value;
-  late BoardData _value = BoardData(_list);
+  late var _value = BoardData(_list);
   var _list = <List<PlayerMark?>>[
     [.x, .o, .x],
     [.o, .x, .o],
@@ -467,7 +467,7 @@ class Board extends StatelessWidget {
         final Rect(:center, :width, :height) = stoneRect;
         final radiusX = width / 2;
         final radiusY = height / 2;
-        const double stretchX = 1.75;
+        const stretchX = 1.75;
         final highlightCenter = Offset(
           (center.dx - radiusX * 0.075) / stretchX,
           center.dy - radiusY * 0.7,
@@ -476,7 +476,7 @@ class Board extends StatelessWidget {
         final highlightPeak = (isBlack ? 0x48 : 0xFF) / 255.0 * opacity;
         canvas
           ..save()
-          ..clipRRect(RRect.fromRectAndRadius(stoneRect, .circular(0x100000)))
+          ..clipRRect(RRect.fromRectAndRadius(stoneRect, const .circular(0x100000)))
           ..transform(Matrix4.diagonal3Values(stretchX, 1, 1).storage)
           ..drawCircle(
             highlightCenter,
@@ -749,7 +749,7 @@ class GameEnd extends RefWidget {
     };
     if (!isTutorialDone) {
       options = [
-        _BoardOverlayText(label: 'Try to get 3 in a row!', onSelect: Board.startNewGame),
+        const _BoardOverlayText(label: 'Try to get 3 in a row!', onSelect: Board.startNewGame),
         _BoardOverlayText(label: '$click anywhere to start.', onSelect: Board.startNewGame),
       ];
     } else if (swap2Phase == .chooseAfter3 || swap2Phase == .chooseAfter5) {
@@ -874,10 +874,10 @@ class _RenderOutlinedText extends RenderBox {
     _fill = TextPainter(
       text: TextSpan(
         text: _label,
-        style: TextStyle(
+        style: const TextStyle(
           fontFamily: Font.permanentMarker,
           fontSize: _fontSize,
-          color: const Black(),
+          color: Black(),
         ),
       ),
       textAlign: .center,

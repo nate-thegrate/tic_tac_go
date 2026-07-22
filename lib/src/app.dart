@@ -1,9 +1,9 @@
-import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:get_hooked_storage/get_hooked_storage.dart';
 import 'package:tic_tac_go/src/board.dart';
@@ -152,7 +152,7 @@ class Backdrop extends StatelessWidget {
         ..translate(dx, dy)
         ..scale(fittedScale)
         ..drawRect(Offset.zero & woodSize, Paint()..shader = woodShader)
-        ..drawPaint(Paint()..color = Color(0xC0f5c782))
+        ..drawPaint(Paint()..color = const Color(0xC0f5c782))
         ..restore();
     } else {
       const color = Color(0xFFFAF8F3);
@@ -197,7 +197,7 @@ class Backdrop extends StatelessWidget {
 
   static Path _clipPath(ClipRef ref) {
     if (ref.select(playingTransition.status, (status) => status.isCompleted)) {
-      return Path()..addRect(Rect.fromLTRB(0, -1.0E9, 1.0E9, 1.0E9));
+      return Path()..addRect(const Rect.fromLTRB(0, -1.0E9, 1.0E9, 1.0E9));
     }
     return Path()..addRect(Offset.zero & ref.size);
   }

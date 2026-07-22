@@ -1,6 +1,7 @@
 /// @docImport 'package:tic_tac_go/main.dart';
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get_hooked/get_hooked.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
@@ -9,7 +10,6 @@ import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/menu.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
-import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
 
 final _keyboard = HardwareKeyboard.instance;
@@ -25,7 +25,7 @@ Future<void> configureKeybinds() async {
 }
 
 /// Used for [TargetPlatform.windows] to get around a full screen UI bug.
-bool _shouldMaximize = false;
+var _shouldMaximize = false;
 
 void _toggleFullScreen() async {
   final isFullScreen = await windowManager.isFullScreen();

@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:get_hooked/get_hooked.dart';
+import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
-import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/rules/connect6.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
@@ -491,12 +491,12 @@ class Menu extends RefWidget {
         children: [
           TextSpan(text: '$cols'),
           tinySpace,
-          TextSpan(text: 'x'),
+          const TextSpan(text: 'x'),
           tinySpace,
           TextSpan(text: '$rows'),
         ],
       ),
-      style: TextStyle(fontFamily: Font.patrickHand, fontWeight: .w600, fontSize: 18),
+      style: const TextStyle(fontFamily: Font.patrickHand, fontWeight: .w600, fontSize: 18),
     );
   }
 
@@ -511,7 +511,7 @@ class Menu extends RefWidget {
         decoration: BoxDecoration(
           color: Black(selected ? 0 : 0.1),
           border: selected
-              ? BoxBorder.symmetric(horizontal: BorderSide(color: Black(0.1), width: 4))
+              ? const BoxBorder.symmetric(horizontal: BorderSide(color: Black(0.1), width: 4))
               : null,
         ),
         child: Padding(
@@ -573,7 +573,7 @@ class Menu extends RefWidget {
           Expanded(
             child: Row(
               children: [
-                SizedBox(width: 16),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Center(
                     child: RefBuilder((context) {
@@ -604,7 +604,7 @@ class Menu extends RefWidget {
             ),
           )
         else
-          Spacer(),
+          const Spacer(),
         Row(
           children: [
             Expanded(
@@ -670,7 +670,7 @@ class Menu extends RefWidget {
               child: DecoratedBox(
                 decoration: ruleset == option
                     ? BoxDecoration(border: Border.all(width: 4))
-                    : BoxDecoration(color: Black(0.1)),
+                    : const BoxDecoration(color: Black(0.1)),
                 child: Padding(
                   padding: const .symmetric(vertical: 8.0),
                   child: Center(child: Text.rich(TextSpan(text: label.toUpperCase()))),
@@ -685,7 +685,7 @@ class Menu extends RefWidget {
   Widget build(BuildContext context) {
     final currentPage = ref.watch(MenuPage.current);
     final Widget contents = switch (currentPage) {
-      .players => RefBuilder(_players),
+      .players => const RefBuilder(_players),
       .boardSize => const Column(
         mainAxisAlignment: .center,
         children: [
@@ -703,7 +703,7 @@ class Menu extends RefWidget {
           SizedBox(height: 8),
         ],
       ),
-      .rules => RefBuilder(_rules),
+      .rules => const RefBuilder(_rules),
     };
     return Center(
       child: Column(

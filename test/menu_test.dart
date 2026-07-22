@@ -5,10 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
 import 'package:tic_tac_go/src/app.dart';
 import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/keybinds.dart';
 import 'package:tic_tac_go/src/menu.dart';
 import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/rules/swap2.dart';
-import 'package:tic_tac_go/src/keybinds.dart';
 
 KeyDownEvent keyDown(LogicalKeyboardKey key) {
   return KeyDownEvent(
@@ -25,6 +25,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     Stored.init(prefs: prefs);
+    await loadShaders();
   });
 
   setUp(() {
@@ -45,6 +46,14 @@ void main() {
     twoPlayer.value = false;
     Difficulty.selected.value = .easy;
     Swap2.reset();
+  });
+
+  testWidgets('Can load the menu and start a game', (tester) async {
+    await tester.pumpWidget(const App());
+    MenuPage.current.value = .rules;
+    primaryAction();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   group('goBack', () {
@@ -98,7 +107,7 @@ void main() {
 
   group('handleKeyEvent', () {
     test('ignores non-KeyDown events', () {
-      final up = KeyUpEvent(
+      const up = KeyUpEvent(
         physicalKey: PhysicalKeyboardKey.keyG,
         logicalKey: LogicalKeyboardKey.keyG,
         timeStamp: Duration.zero,

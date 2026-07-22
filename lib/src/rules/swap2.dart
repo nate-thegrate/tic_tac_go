@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:get_hooked/get_hooked.dart';
-import 'package:tic_tac_go/src/board.dart';
 import 'package:tic_tac_go/src/ai_move.dart';
-import 'package:tic_tac_go/src/rules/ruleset.dart';
 import 'package:tic_tac_go/src/app.dart' show rng;
+import 'package:tic_tac_go/src/board.dart';
+import 'package:tic_tac_go/src/rules/ruleset.dart';
 
 /// Swap2 opening / color-choice flow.
 enum Swap2Phase {
