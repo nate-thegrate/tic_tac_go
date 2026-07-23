@@ -37,9 +37,7 @@ When using the Dart MCP `analyze_files` tool, analyze the entire project instead
 
 `.dart` files in this repo can be found in the `lib/` directory or one of its subdirectories.
 
-When in doubt, read more.
-- Seek out a thorough understanding of this codebase and its dependencies before making changes.
-- Assume that your previous changes may have been tweaked or refactored since you last saw them, and re-read before making further edits.
+**Before every edit:** assume that a user or formatter may have performed edits since the last time you saw a file. Treat any earlier view as stale, and re-read the file immediately before editing it.
 
 ## Coding style
 
